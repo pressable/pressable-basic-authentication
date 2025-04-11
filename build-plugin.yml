@@ -1,0 +1,57 @@
+name: Build Plugin for Distribution
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags (e.g., v1.0.0)
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.0'
+        tools: composer
+
+    - name: Get version from plugin file
+      id: plugin-version
+      run: |
+        VERSION=$(grep "Version:" pressable-basic-authentication.php | awk '{print $2}' | tr -d '\r')
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+    - name: Create build directory
+      run: mkdir -p build/pressable-basic-authentication
+
+    - name: Copy plugin files
+      run: |
+        cp pressable-basic-authentication.php build/pressable-basic-authentication/
+        cp README.md build/pressable-basic-authentication/ || true
+        cp LICENSE build/pressable-basic-authentication/ || true
+
+    - name: Create zip file
+      run: |
+        cd build
+        zip -r pressable-basic-authentication-${{ steps.plugin-version.outputs.version }}.zip pressable-basic-authentication
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: pressable-basic-authentication-${{ steps.plugin-version.outputs.version }}
+        path: build/pressable-basic-authentication-${{ steps.plugin-version.outputs.version }}.zip
+
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/pressable-basic-authentication-${{ steps.plugin-version.outputs.version }}.zip
+        body: |
+          ### Changelog
+          - Basic authentication plugin for WordPress
+          - Version ${{ steps.plugin-version.outputs.version }}
