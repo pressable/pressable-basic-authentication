@@ -1,0 +1,12 @@
+{
+    "require-dev": {
+        "squizlabs/php_codesniffer": "*",
+        "phpcsstandards/phpcsutils": "@alpha",
+        "phpcsstandards/phpcsextra": "@alpha"
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    }
+}

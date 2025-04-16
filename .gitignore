@@ -1,0 +1,9 @@
+vendor
+vendor/**
+.vscode/**
+.DS_Store
+*.zip
+*.swp
+release
+release/**
+.idea/**
