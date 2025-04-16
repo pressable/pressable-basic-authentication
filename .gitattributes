@@ -1,0 +1,17 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Directories
+/.git export-ignore
+/.wordpress-org export-ignore
+/.github export-ignore
+/vendor export-ignore
+/dev export-ignore
+
+# Files
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/README.md export-ignore
+/composer.json export-ignore
+/composer.lock export-ignore
+/.DS_Store export-ignore
