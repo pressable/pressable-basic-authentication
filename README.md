@@ -21,8 +21,8 @@ Key features:
 
 ## Requirements
 
-- WordPress 5.0 or higher
-- PHP 7.0 or higher
+- WordPress 6.0 or higher
+- PHP 7.4 or higher
 - Server must support PHP_AUTH_USER and PHP_AUTH_PW server variables (most standard hosting environments do)
 
 ## Frequently Asked Questions
