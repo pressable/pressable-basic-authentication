@@ -258,7 +258,8 @@ class Pressable_Basic_Auth {
 
 		// Check if we're on the login page and have Basic Auth credentials
 		// Also check we're not performing an action like logout, password reset, etc.
-		if ( 'wp-login.php' === $pagenow &&
+    if ( 'wp-login.php' === $pagenow &&
+       is_user_logged_in() &&
 			 ! empty( $auth_user ) &&
 			 ! empty( $auth_pw ) &&
 			 ! isset( $_GET['action'] ) && // Exclude actions like 'logout', 'rp', 'register'
