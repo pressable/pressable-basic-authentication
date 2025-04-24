@@ -198,17 +198,33 @@ class Pressable_Basic_Auth {
 
 		// Clear Basic Auth credentials by forcing a 401.
 		header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
-		header( 'HTTP/1.1 401 Unauthorized' );
+    header( 'HTTP/1.1 401 Unauthorized' );
 
-		// Output a JavaScript-based redirect after the 401 response.
-		echo '<script>
-			setTimeout(function() {
-				window.location.href = "' . esc_url( home_url() ) . '";
-			}, 1000);
-		</script>';
+    // Prevent caching of this response.
+    $this->prevent_caching(); // Good practice to prevent caching of the 401/logout page
 
-		// End execution to prevent further processing.
-		exit;
+    // Output minimal HTML with a meta refresh tag for redirection.
+    // This gives the browser a moment to process the 401 before redirecting.
+    $redirect_url = esc_url( home_url() );
+    ?>
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <meta charset="<?php bloginfo( 'charset' ); ?>">
+          <title><?php esc_html_e( 'Logging Out...', 'hosting-basic-authentication' ); ?></title>
+          <meta http-equiv="refresh" content="1;url=<?php echo $redirect_url; ?>">
+          <style>body { font-family: sans-serif; padding: 20px; }</style>
+      </head>
+      <body>
+          <h1><?php esc_html_e( 'Logout Successful', 'hosting-basic-authentication' ); ?></h1>
+          <p><?php esc_html_e( 'You have been logged out. You will be redirected shortly.', 'hosting-basic-authentication' ); ?></p>
+          <p><a href="<?php echo $redirect_url; ?>"><?php esc_html_e( 'Click here if you are not redirected.', 'hosting-basic-authentication' ); ?></a></p>
+      </body>
+      </html>
+    <?php
+
+    // End execution to prevent further processing and ensure headers are sent.
+    exit;
 	}
 
 	/**
