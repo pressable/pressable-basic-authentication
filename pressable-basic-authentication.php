@@ -129,7 +129,7 @@ class Pressable_Basic_Auth {
 	private function send_auth_headers() {
 		header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
 		header( 'HTTP/1.1 401 Unauthorized' );
-		echo '<h1>' . esc_html__( 'Authentication Required', 'pressable-basic-auth' ) . '</h1>';
+		echo '<h1>' . esc_html__( 'Authentication Required', 'hosting-basic-authentication' ) . '</h1>';
 		exit;
 	}
 
