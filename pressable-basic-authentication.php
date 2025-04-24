@@ -242,7 +242,7 @@ class Pressable_Basic_Auth {
 		), $logout_url );
 	}
 
-	/**
+  /**
 	 * Redirects from wp-login.php to home page when user is already authenticated via Basic Auth
 	 * Public method that can be used as a hook callback
 	 */
@@ -251,36 +251,46 @@ class Pressable_Basic_Auth {
 
 		// Sanitize auth credentials before checking
 		$auth_user = isset($_SERVER['PHP_AUTH_USER']) ? sanitize_text_field(wp_unslash($_SERVER['PHP_AUTH_USER'])) : '';
-		$auth_pw = isset($_SERVER['PHP_AUTH_PW']) ? wp_unslash($_SERVER['PHP_AUTH_PW']) : '';
+		$auth_pw   = isset($_SERVER['PHP_AUTH_PW']) ? wp_unslash($_SERVER['PHP_AUTH_PW']) : ''; // No sanitization needed for password comparison
 
 		// Check if we're on the login page and have Basic Auth credentials
+		// Also check we're not performing an action like logout, password reset, etc.
 		if ( 'wp-login.php' === $pagenow &&
-		     ! empty( $auth_user ) &&
-		     ! empty( $auth_pw ) &&
-		     ! isset( $_GET['action'] ) &&
-		     ! isset( $_GET['loggedout'] ) &&
-		     ! isset( $_POST['log'] ) ) {
+			 ! empty( $auth_user ) &&
+			 ! empty( $auth_pw ) &&
+			 ! isset( $_GET['action'] ) && // Exclude actions like 'logout', 'rp', 'register'
+			 ! isset( $_GET['loggedout'] ) && // Exclude message after logout
+			 ! isset( $_POST['log'] ) ) { // Exclude actual login form submission
 
-			// Get appropriate home URL for either multisite or regular WordPress
+			// Determine the correct redirect URL
+			$redirect_url = '';
 			if ( is_multisite() ) {
-				$redirect_url = network_home_url();
+				// Use get_current_blog_id() for reliability in multisite
+				$current_blog_id = get_current_blog_id();
+				$redirect_url = get_home_url( $current_blog_id );
 
-				// If we can determine the current blog, go to its home instead
-				if ( isset( $_SERVER['HTTP_HOST'] ) ) {
-					$blog_details = get_blog_details( array( 'domain' => sanitize_text_field(wp_unslash($_SERVER['HTTP_HOST'])) ) );
-					if ( $blog_details ) {
-						$redirect_url = get_home_url( $blog_details->blog_id );
-					}
+				// Fallback to network home URL if site-specific home URL is somehow unavailable
+				if ( empty( $redirect_url ) ) {
+					$redirect_url = network_home_url();
 				}
 			} else {
+				// Single site: just use the regular home URL
 				$redirect_url = home_url();
 			}
 
-			// Safe redirect
-			wp_safe_redirect( $redirect_url );
-			exit;
+			// Ensure we have a valid URL before redirecting
+			if ( ! empty( $redirect_url ) ) {
+				// Safe redirect to the determined home page
+        wp_safe_redirect( $redirect_url );
+
+				exit;
+			} else {
+        // Handle case where redirect URL could not be determined
+        wp_die("Could not determine redirect URL.");
+      }
 		}
 	}
+
 
 	/**
 	 * Prevent caching of authentication requests
