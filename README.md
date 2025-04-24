@@ -46,12 +46,6 @@ In a multisite installation, Super Admins can bypass the authentication. For sin
 
 ## Changelog
 
-### 1.0.0
-* Initial release with complete Basic Authentication functionality
-* Includes proper logout handling
-* Adds multisite support with Super Admin bypass
-* Implements proper redirects from wp-login.php
-
 ## License
 
 This plugin is licensed under the GPL2 license. See the [LICENSE](LICENSE) file for details.
