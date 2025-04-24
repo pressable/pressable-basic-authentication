@@ -87,7 +87,7 @@ class Pressable_Basic_Auth {
 
 		// Check for Basic Authentication credentials.
 		$auth_user = isset( $_SERVER['PHP_AUTH_USER'] ) ? sanitize_text_field( wp_unslash( $_SERVER['PHP_AUTH_USER'] ) ) : null;
-		$auth_pass = isset( $_SERVER['PHP_AUTH_PW'] ) ? $_SERVER['PHP_AUTH_PW'] : null;
+		$auth_pass = isset( $_SERVER['PHP_AUTH_PW'] ) ? wp_unslash( $_SERVER['PHP_AUTH_PW'] ) : null;
 
 		if ( ! $auth_user || ! $auth_pass ) {
 			$this->log_failed_auth( 'Missing credentials' );
@@ -138,6 +138,10 @@ class Pressable_Basic_Auth {
 	 */
 	private function extract_basic_auth_credentials() {
 		if ( ! empty( $_SERVER['PHP_AUTH_USER'] ) && ! empty( $_SERVER['PHP_AUTH_PW'] ) ) {
+			// Sanitize credentials even when just checking
+			$_SERVER['PHP_AUTH_USER'] = sanitize_text_field( wp_unslash( $_SERVER['PHP_AUTH_USER'] ) );
+			// No sanitization for password to preserve special characters
+			$_SERVER['PHP_AUTH_PW'] = wp_unslash( $_SERVER['PHP_AUTH_PW'] );
 			return;
 		}
 
@@ -152,7 +156,9 @@ class Pressable_Basic_Auth {
 			$auth_encoded = substr( $auth_header, 6 );
 			$auth_decoded = base64_decode( $auth_encoded );
 			if ( $auth_decoded && strpos( $auth_decoded, ':' ) !== false ) {
-				list( $_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'] ) = explode( ':', $auth_decoded, 2 );
+				list( $user, $pw ) = explode( ':', $auth_decoded, 2 );
+				$_SERVER['PHP_AUTH_USER'] = sanitize_text_field( $user );
+				$_SERVER['PHP_AUTH_PW'] = $pw;
 			}
 		}
 	}
@@ -227,10 +233,14 @@ class Pressable_Basic_Auth {
 	public function handle_login_redirect() {
 		global $pagenow;
 
+		// Sanitize auth credentials before checking
+		$auth_user = isset($_SERVER['PHP_AUTH_USER']) ? sanitize_text_field(wp_unslash($_SERVER['PHP_AUTH_USER'])) : '';
+		$auth_pw = isset($_SERVER['PHP_AUTH_PW']) ? wp_unslash($_SERVER['PHP_AUTH_PW']) : '';
+
 		// Check if we're on the login page and have Basic Auth credentials
 		if ( 'wp-login.php' === $pagenow &&
-		     ! empty( $_SERVER['PHP_AUTH_USER'] ) &&
-		     ! empty( $_SERVER['PHP_AUTH_PW'] ) &&
+		     ! empty( $auth_user ) &&
+		     ! empty( $auth_pw ) &&
 		     ! isset( $_GET['action'] ) &&
 		     ! isset( $_GET['loggedout'] ) &&
 		     ! isset( $_POST['log'] ) ) {
@@ -241,7 +251,7 @@ class Pressable_Basic_Auth {
 
 				// If we can determine the current blog, go to its home instead
 				if ( isset( $_SERVER['HTTP_HOST'] ) ) {
-					$blog_details = get_blog_details( array( 'domain' => $_SERVER['HTTP_HOST'] ) );
+					$blog_details = get_blog_details( array( 'domain' => sanitize_text_field(wp_unslash($_SERVER['HTTP_HOST'])) ) );
 					if ( $blog_details ) {
 						$redirect_url = get_home_url( $blog_details->blog_id );
 					}
