@@ -200,6 +200,9 @@ class Pressable_Basic_Auth {
 		header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
     header( 'HTTP/1.1 401 Unauthorized' );
 
+    // After the 401 is processed, instruct the browser to navigate away.
+    header( 'Refresh: 1; url=' . home_url() );
+
     // Prevent caching of this response.
     $this->prevent_caching(); // Good practice to prevent caching of the 401/logout page
 
