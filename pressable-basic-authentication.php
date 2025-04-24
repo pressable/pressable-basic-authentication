@@ -34,7 +34,7 @@ class Pressable_Basic_Auth {
 		add_filter( 'logout_url', array( $this, 'modify_logout_url' ), 10, 2 );
 
 		// Hook into login page early
-		add_action( 'login_init', array( $this, 'maybe_redirect_from_login_page' ), 0 );
+		add_action( 'login_init', array( $this, 'handle_login_redirect' ), 0 );
 	}
 
 	/**
@@ -57,12 +57,9 @@ class Pressable_Basic_Auth {
 		}
 
 		// Handle logout request.
-		if ( isset( $_GET['basic-auth-logout'] ) ) {
+		if ( isset( $_GET['basic-auth-logout'] ) && isset( $_GET['_basic_auth_nonce'] ) && wp_verify_nonce( $_GET['_basic_auth_nonce'], 'basic-auth-logout' ) ) {
 			$this->handle_basic_auth_logout();
 		}
-
-		// Redirect from wp-login.php when already authenticated via Basic Auth
-		$this->maybe_redirect_from_login_page();
 
 		// Force authentication.
 		$this->force_basic_authentication();
@@ -214,13 +211,18 @@ class Pressable_Basic_Auth {
 	 * @return string Modified logout URL
 	 */
 	public function modify_logout_url( $logout_url, $redirect ) {
-		return add_query_arg( 'basic-auth-logout', '1', $logout_url );
+		$nonce = wp_create_nonce( 'basic-auth-logout' );
+		return add_query_arg( array(
+			'basic-auth-logout' => '1',
+			'_basic_auth_nonce' => $nonce,
+		), $logout_url );
 	}
 
 	/**
 	 * Redirects from wp-login.php to home page when user is already authenticated via Basic Auth
+	 * Public method that can be used as a hook callback
 	 */
-	private function maybe_redirect_from_login_page() {
+	public function handle_login_redirect() {
 		global $pagenow;
 
 		// Check if we're on the login page and have Basic Auth credentials
