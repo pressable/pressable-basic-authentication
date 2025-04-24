@@ -112,13 +112,15 @@ class Pressable_Basic_Auth {
 	 * @param string $message The message to log.
 	 */
 	private function log_failed_auth( $message ) {
-		error_log(
-			sprintf(
-				'[%s] Basic Auth Failed: %s',
-				gmdate( 'Y-m-d H:i:s' ),
-				$message
-			)
-		);
+		if ( apply_filters( 'basic_auth_log_errors', defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) ) {
+			error_log(
+				sprintf(
+					'[%s] Basic Auth Failed: %s',
+					gmdate( 'Y-m-d H:i:s' ),
+					$message
+				)
+			);
+		}
 	}
 
 	/**
