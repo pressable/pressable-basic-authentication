@@ -243,10 +243,12 @@ class Pressable_Basic_Auth {
 	 * @return string Modified logout URL
 	 */
 	public function modify_logout_url( $logout_url, $redirect ) {
-		$nonce = wp_create_nonce( 'basic-auth-logout')
+		$nonce = wp_create_nonce( 'basic-auth-logout');
 		return add_query_arg( array(
 			'basic-auth-logout' => '1', 
 			'_basic_auth_nonce' => $nonce,
+			// Preserve any redirect supplied by core / plugins.
+			'redirect_to' => rawurlencode( $redirect ),
 		), $logout_url );
 	}
 
