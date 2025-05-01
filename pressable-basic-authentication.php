@@ -27,18 +27,14 @@ class Pressable_Basic_Auth {
 	 * Constructor
 	 */
 	public function __construct() {
-		if ( is_multisite() ) {
-			add_action( 'ms_loaded', array( $this, 'init' ), 1 );
-		} else {
-
-			add_action( 'plugins_loaded', array( $this, 'init' ), 1 );
-		}
+		// Hook into WordPress before anything is outputted.
+		add_action( 'plugins_loaded', array( $this, 'init' ), 1 );
 
 		// Add filter for logout URL.
 		add_filter( 'logout_url', array( $this, 'modify_logout_url' ), 10, 2 );
 
 		// Hook into login page early
-		add_action( 'login_init', array( $this, 'handle_login_redirect' ), 0 );
+		add_action( 'login_init', array( $this, 'maybe_redirect_from_login_page' ), 0 );
 	}
 
 	/**
@@ -60,10 +56,18 @@ class Pressable_Basic_Auth {
 			return;
 		}
 
+		// Skip requests to excluded endpoints
+        if ($this->should_skip_auth()) {
+            return;
+        }
+
 		// Handle logout request.
-		if ( isset( $_GET['basic-auth-logout'] ) && isset( $_GET['_basic_auth_nonce'] ) && wp_verify_nonce( $_GET['_basic_auth_nonce'], 'basic-auth-logout' ) ) {
+		if ( isset( $_GET['basic-auth-logout'] ) ) {
 			$this->handle_basic_auth_logout();
 		}
+
+		// Redirect from wp-login.php when already authenticated via Basic Auth
+		$this->maybe_redirect_from_login_page();
 
 		// Force authentication.
 		$this->force_basic_authentication();
@@ -72,7 +76,7 @@ class Pressable_Basic_Auth {
 	/**
 	 * Force Basic Authentication
 	 */
-	private function force_basic_authentication() {		
+	private function force_basic_authentication() {
 		// Prevent caching of authentication requests.
 		$this->prevent_caching();
 
@@ -91,7 +95,7 @@ class Pressable_Basic_Auth {
 
 		// Check for Basic Authentication credentials.
 		$auth_user = isset( $_SERVER['PHP_AUTH_USER'] ) ? sanitize_text_field( wp_unslash( $_SERVER['PHP_AUTH_USER'] ) ) : null;
-		$auth_pass = isset( $_SERVER['PHP_AUTH_PW'] ) ? wp_unslash( $_SERVER['PHP_AUTH_PW'] ) : null;
+		$auth_pass = isset( $_SERVER['PHP_AUTH_PW'] ) ? $_SERVER['PHP_AUTH_PW'] : null;
 
 		if ( ! $auth_user || ! $auth_pass ) {
 			$this->log_failed_auth( 'Missing credentials' );
@@ -116,16 +120,56 @@ class Pressable_Basic_Auth {
 	 * @param string $message The message to log.
 	 */
 	private function log_failed_auth( $message ) {
-		if ( apply_filters( 'basic_auth_log_errors', defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) ) {
-			error_log(
-				sprintf(
-					'[%s] Basic Auth Failed: %s',
-					gmdate( 'Y-m-d H:i:s' ),
-					$message
-				)
-			);
-		}
+		error_log(
+			sprintf(
+				'[%s] Basic Auth Failed: %s',
+				gmdate( 'Y-m-d H:i:s' ),
+				$message
+			)
+		);
 	}
+
+	/**
+     * Check if the current request should skip authentication
+     *
+     * @return bool
+     */
+    private function should_skip_auth() {
+        // List of endpoints to exclude from Basic Auth
+        $excluded_endpoints = array(
+            'xmlrpc.php',
+            'wp-json/jetpack',
+            'wp-json/wp/v2',
+            'wp-json/wp/v3'
+        );
+
+        // Get current request details
+        $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+        $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
+
+        // Check if this is a direct xmlrpc.php request
+        if (basename($script_name) === 'xmlrpc.php') {
+            return true;
+        }
+
+        // Check all excluded endpoints
+        foreach ($excluded_endpoints as $endpoint) {
+            if (strpos($request_uri, $endpoint) !== false) {
+                return true;
+            }
+        }
+
+        // Check WordPress constants
+        if (defined('XMLRPC_REQUEST') && XMLRPC_REQUEST) {
+            return true;
+        }
+
+        if (defined('REST_REQUEST') && REST_REQUEST) {
+            return true;
+        }
+
+        return false;
+    }
 
 	/**
 	 * Sends authentication headers.
@@ -133,7 +177,7 @@ class Pressable_Basic_Auth {
 	private function send_auth_headers() {
 		header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
 		header( 'HTTP/1.1 401 Unauthorized' );
-		echo '<h1>' . esc_html__( 'Authentication Required', 'hosting-basic-authentication' ) . '</h1>';
+		echo '<h1>' . esc_html__( 'Authentication Required', 'pressable-basic-auth' ) . '</h1>';
 		exit;
 	}
 
@@ -142,10 +186,6 @@ class Pressable_Basic_Auth {
 	 */
 	private function extract_basic_auth_credentials() {
 		if ( ! empty( $_SERVER['PHP_AUTH_USER'] ) && ! empty( $_SERVER['PHP_AUTH_PW'] ) ) {
-			// Sanitize credentials even when just checking
-			$_SERVER['PHP_AUTH_USER'] = sanitize_text_field( wp_unslash( $_SERVER['PHP_AUTH_USER'] ) );
-			// No sanitization for password to preserve special characters
-			$_SERVER['PHP_AUTH_PW'] = wp_unslash( $_SERVER['PHP_AUTH_PW'] );
 			return;
 		}
 
@@ -160,9 +200,7 @@ class Pressable_Basic_Auth {
 			$auth_encoded = substr( $auth_header, 6 );
 			$auth_decoded = base64_decode( $auth_encoded );
 			if ( $auth_decoded && strpos( $auth_decoded, ':' ) !== false ) {
-				list( $user, $pw ) = explode( ':', $auth_decoded, 2 );
-				$_SERVER['PHP_AUTH_USER'] = sanitize_text_field( $user );
-				$_SERVER['PHP_AUTH_PW'] = $pw;
+				list( $_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'] ) = explode( ':', $auth_decoded, 2 );
 			}
 		}
 	}
@@ -204,35 +242,15 @@ class Pressable_Basic_Auth {
 		header( 'WWW-Authenticate: Basic realm="Restricted Area"' );
 		header( 'HTTP/1.1 401 Unauthorized' );
 
-		// After the 401 is processed, instruct the browser to navigate away.
-		header( 'Refresh: 1; url=' . home_url() );
+		// Output a JavaScript-based redirect after the 401 response.
+		echo '<script>
+			setTimeout(function() {
+				window.location.href = "' . esc_url( home_url() ) . '";
+			}, 1000);
+		</script>';
 
-		// Prevent caching of this response.
-		$this->prevent_caching(); // Good practice to prevent caching of the 401/logout page
-
-		// Output minimal HTML with a meta refresh tag for redirection.
-		// This gives the browser a moment to process the 401 before redirecting.
-		$redirect_url = esc_url( home_url() );
-		?>
-		<!DOCTYPE html>
-		<html>
-		<head>
-			<meta charset="<?php bloginfo( 'charset' ); ?>">
-			<title><?php esc_html_e( 'Logging Out...', 'hosting-basic-authentication' ); ?></title>
-			<meta http-equiv="refresh" content="1;url=<?php echo $redirect_url; ?>">
-			<style>body { font-family: sans-serif; padding: 20px; }</style>
-		</head>
-		<body>
-			<h1><?php esc_html_e( 'Logout Successful', 'hosting-basic-authentication' ); ?></h1>
-			<p><?php esc_html_e( 'You have been logged out. You will be redirected shortly.', 'hosting-basic-authentication' ); ?></p>
-			<p><a href="<?php echo $redirect_url; ?>"><?php esc_html_e( 'Click here if you are not redirected.', 'hosting-basic-authentication' ); ?></a></p>
-		</body>
-		</html>
-		<?php
-
-		// End execution to prevent further processing and ensure headers are sent.
+		// End execution to prevent further processing.
 		exit;
-	
 	}
 
 	/**
@@ -243,60 +261,41 @@ class Pressable_Basic_Auth {
 	 * @return string Modified logout URL
 	 */
 	public function modify_logout_url( $logout_url, $redirect ) {
-		$nonce = wp_create_nonce( 'basic-auth-logout');
-		return add_query_arg( array(
-			'basic-auth-logout' => '1', 
-			'_basic_auth_nonce' => $nonce,
-			// Preserve any redirect supplied by core / plugins.
-			'redirect_to' => rawurlencode( $redirect ),
-		), $logout_url );
+		return add_query_arg( 'basic-auth-logout', '1', $logout_url );
 	}
 
 	/**
 	 * Redirects from wp-login.php to home page when user is already authenticated via Basic Auth
-	 * Public method that can be used as a hook callback
 	 */
-	public function handle_login_redirect() {
+	private function maybe_redirect_from_login_page() {
 		global $pagenow;
 
-		// Sanitize auth credentials before checking
-		$auth_user = isset($_SERVER['PHP_AUTH_USER']) ? sanitize_text_field(wp_unslash($_SERVER['PHP_AUTH_USER'])) : '';
-		$auth_pw   = isset($_SERVER['PHP_AUTH_PW']) ? wp_unslash($_SERVER['PHP_AUTH_PW']) : ''; // No sanitization needed for password comparison
-
 		// Check if we're on the login page and have Basic Auth credentials
-		// Also check we're not performing an action like logout, password reset, etc.
-		if ( 'wp-login.php' === $pagenow && is_user_logged_in() &&
-		     ! empty( $auth_user ) &&
-		     ! empty( $auth_pw ) &&
-		     ! isset( $_GET['action'] ) && // Exclude actions like 'logout', 'rp', 'register'
-		     ! isset( $_GET['loggedout'] ) && // Exclude message after logout
-		     ! isset( $_POST['log'] ) ) { // Exclude actual login form submission
+		if ( 'wp-login.php' === $pagenow &&
+		     ! empty( $_SERVER['PHP_AUTH_USER'] ) &&
+		     ! empty( $_SERVER['PHP_AUTH_PW'] ) &&
+		     ! isset( $_GET['action'] ) &&
+		     ! isset( $_GET['loggedout'] ) &&
+		     ! isset( $_POST['log'] ) ) {
 
-			// Determine the correct redirect URL
-			$redirect_url = '';
+			// Get appropriate home URL for either multisite or regular WordPress
 			if ( is_multisite() ) {
-				// Use get_current_blog_id() for reliability in multisite
-				$current_blog_id = get_current_blog_id();
-				$redirect_url = get_home_url( $current_blog_id );
+				$redirect_url = network_home_url();
 
-				//fallback to network home URL if site-specific home URL is somehow unavailable
-				if ( empty( $redirect_url ) ) {
-					$redirect_url = network_home_url();
+				// If we can determine the current blog, go to its home instead
+				if ( isset( $_SERVER['HTTP_HOST'] ) ) {
+					$blog_details = get_blog_details( array( 'domain' => $_SERVER['HTTP_HOST'] ) );
+					if ( $blog_details ) {
+						$redirect_url = get_home_url( $blog_details->blog_id );
+					}
 				}
 			} else {
-				// Single site: just use the regular home URL
 				$redirect_url = home_url();
 			}
 
-			//Ensure we have a valid URL before redirecting
-			if ( ! empty( $redirect_url ) ) {
-				// Safe redirect to the determined home page
-				wp_safe_redirect( $redirect_url );
-				exit;
-			} else {
-				wp_die("Could not determine redirect URL. ");
-			}
-
+			// Safe redirect
+			wp_safe_redirect( $redirect_url );
+			exit;
 		}
 	}
 
