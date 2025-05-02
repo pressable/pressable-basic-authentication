@@ -8,7 +8,7 @@
 /*
 Plugin Name: Hosting Basic Authentication
 Description: Forces all users to authenticate using Basic Authentication before accessing any page.
-Version: 1.0.0
+Version: 1.0.1
 License: GPL2
 Text Domain: hosting-basic-authentication
 */
@@ -55,6 +55,11 @@ class Pressable_Basic_Auth {
 		if ( $this->is_cli_request() ) {
 			return;
 		}
+
+		// Skip requests to excluded endpoints
+        if ($this->should_skip_auth()) {
+            return;
+        }
 
 		// Handle logout request.
 		if ( isset( $_GET['basic-auth-logout'] ) ) {
@@ -123,6 +128,48 @@ class Pressable_Basic_Auth {
 			)
 		);
 	}
+
+	/**
+     * Check if the current request should skip authentication
+     *
+     * @return bool
+     */
+    private function should_skip_auth() {
+        // List of endpoints to exclude from Basic Auth
+        $excluded_endpoints = array(
+            'xmlrpc.php',
+            'wp-json/jetpack',
+            'wp-json/wp/v2',
+            'wp-json/wp/v3'
+        );
+
+        // Get current request details
+        $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+        $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
+
+        // Check if this is a direct xmlrpc.php request
+        if (basename($script_name) === 'xmlrpc.php') {
+            return true;
+        }
+
+        // Check all excluded endpoints
+        foreach ($excluded_endpoints as $endpoint) {
+            if (strpos($request_uri, $endpoint) !== false) {
+                return true;
+            }
+        }
+
+        // Check WordPress constants
+        if (defined('XMLRPC_REQUEST') && XMLRPC_REQUEST) {
+            return true;
+        }
+
+        if (defined('REST_REQUEST') && REST_REQUEST) {
+            return true;
+        }
+
+        return false;
+    }
 
 	/**
 	 * Sends authentication headers.

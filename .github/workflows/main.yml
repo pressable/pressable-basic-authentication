@@ -1,0 +1,41 @@
+name: PressableBasicAuthReleaseCI
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_NAME: pressable-basic-authentication
+  VERSION_FILE_PATH: './pressable-basic-authentication.php'
+
+jobs:
+  build:
+    name: Package Release Project
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1.3'
+          bundler-cache: true
+
+      - name: Create ZIP Archive
+        run: git archive --format zip --output ${{ env.PROJECT_NAME }}.zip --prefix ${{ env.PROJECT_NAME }}/ main -0
+
+      - name: Install Octokit Gem
+        run: gem install octokit
+
+      - name: Run Release Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+          REPO_SHA: ${{ github.sha }}
+          VERSION_FILE_PATH: ${{ env.VERSION_FILE_PATH }}
+          ZIP_FILE_NAME: ${{ env.PROJECT_NAME }}.zip
+          PROJECT_ZIP_NAME: ${{ env.PROJECT_NAME }}.zip
+        run: ruby ./.github/workflows/build.rb
