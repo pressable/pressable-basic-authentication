@@ -267,7 +267,7 @@ class Pressable_Basic_Auth {
 	/**
 	 * Redirects from wp-login.php to home page when user is already authenticated via Basic Auth
 	 */
-	private function maybe_redirect_from_login_page() {
+	public function maybe_redirect_from_login_page() {
 		global $pagenow;
 
 		// Check if we're on the login page and have Basic Auth credentials
