@@ -8,7 +8,7 @@
 /*
 Plugin Name: Hosting Basic Authentication
 Description: Forces all users to authenticate using Basic Authentication before accessing any page.
-Version: 1.0.1
+Version: 1.0.2
 License: GPL2
 Text Domain: hosting-basic-authentication
 */
