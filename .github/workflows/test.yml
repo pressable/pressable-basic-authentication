@@ -1,0 +1,25 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Lint and hook registration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Report PHP version
+        run: php -v
+
+      - name: Lint PHP files
+        run: find . -path ./vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 -- php -l
+
+      - name: Hook registration regression test
+        run: php tests/hook-registration-test.php
