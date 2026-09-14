@@ -8,7 +8,7 @@
 /*
 Plugin Name: Hosting Basic Authentication
 Description: Forces all users to authenticate using Basic Authentication before accessing any page.
-Version: 1.0.3
+Version: 1.0.4
 License: GPL2
 Text Domain: hosting-basic-authentication
 */
@@ -30,18 +30,6 @@ class Pressable_Basic_Auth {
 		// Hook into WordPress before anything is outputted.
 		add_action( 'plugins_loaded', array( $this, 'init' ), 1 );
 
-		// Logout is handled on `init`, deliberately later than the rest of `init()`.
-		// wp_logout() fires the `wp_logout` action, and its subscribers may rely on
-		// constants their own plugin defines in a `plugins_loaded` callback. Firing it
-		// from `plugins_loaded` priority 1 races that setup, and which plugin wins the
-		// race depends on load order -- `active_plugins` ordering, anything filtering
-		// it, and network-activated plugins, which load earlier still. User Switching
-		// defines its cookie constants that way, so wherever this plugin happens to run
-		// first, User Switching's `wp_logout` subscriber fatals on a constant it has
-		// not defined yet. Hooking to `init` drops the dependency on load order
-		// entirely: every `plugins_loaded` callback has completed by then.
-		add_action( 'init', array( $this, 'handle_logout_request' ), 1 );
-
 		// Add filter for logout URL.
 		add_filter( 'logout_url', array( $this, 'modify_logout_url' ), 10, 2 );
 
@@ -53,8 +41,29 @@ class Pressable_Basic_Auth {
 	 * Initialize the plugin
 	 */
 	public function init() {
-		if ( $this->skip_request() ) {
+		// Skip if we're doing AJAX.
+		if ( $this->is_ajax_request() ) {
 			return;
+		}
+
+		// Skip if we're doing CRON.
+		if ( $this->is_cron_request() ) {
+			return;
+		}
+
+		// Skip if we're in CLI mode.
+		if ( $this->is_cli_request() ) {
+			return;
+		}
+
+		// Skip requests to excluded endpoints
+        if ($this->should_skip_auth()) {
+            return;
+        }
+
+		// Handle logout request.
+		if ( isset( $_GET['basic-auth-logout'] ) ) {
+			$this->handle_basic_auth_logout();
 		}
 
 		// Redirect from wp-login.php when already authenticated via Basic Auth
@@ -62,36 +71,6 @@ class Pressable_Basic_Auth {
 
 		// Force authentication.
 		$this->force_basic_authentication();
-	}
-
-	/**
-	 * Handles the Basic Auth logout request.
-	 *
-	 * Hooked to `init` rather than running with the rest of init() on
-	 * `plugins_loaded` -- see the hook registration in the constructor for why.
-	 */
-	public function handle_logout_request() {
-		if ( $this->skip_request() ) {
-			return;
-		}
-
-		if ( ! isset( $_GET['basic-auth-logout'] ) ) {
-			return;
-		}
-
-		$this->handle_basic_auth_logout();
-	}
-
-	/**
-	 * Whether this request is outside the scope of Basic Authentication.
-	 *
-	 * @return bool
-	 */
-	private function skip_request() {
-		return $this->is_ajax_request()
-			|| $this->is_cron_request()
-			|| $this->is_cli_request()
-			|| $this->should_skip_auth();
 	}
 
 	/**
@@ -128,27 +107,6 @@ class Pressable_Basic_Auth {
 		if ( is_wp_error( $user ) ) {
 			$this->log_failed_auth( "Invalid credentials for user: $auth_user" );
 			$this->send_auth_headers();
-		}
-
-		// A request asking to log out must still clear the authentication gate above --
-		// that is what keeps an anonymous caller from reaching wp_logout() -- but it must
-		// not be given a session that handle_logout_request() discards moments later on
-		// `init`. Establishing one fires set_auth_cookie and set_logged_in_cookie on what
-		// is only ever a logout, which an audit or session-tracking plugin can reasonably
-		// record as a real login.
-		//
-		// Skipping wp_set_current_user() as well as the cookies is correct, not a
-		// shortcut: execution only reaches here when nobody is logged in -- a live session
-		// returns above -- so there is no established identity for the following
-		// wp_logout() to report. It passes whatever get_current_user_id() actually holds,
-		// which is 0, instead of one this method manufactured moments earlier purely to
-		// tear it down again.
-		//
-		// Placement is load-bearing in both directions. Above the credential handling this
-		// would skip the 401 as well, readmitting the unauthenticated caller it exists to
-		// exclude; below the cookie calls it would do nothing at all.
-		if ( isset( $_GET['basic-auth-logout'] ) ) {
-			return;
 		}
 
 		// Log the user in programmatically.
@@ -311,15 +269,6 @@ class Pressable_Basic_Auth {
 	 */
 	public function maybe_redirect_from_login_page() {
 		global $pagenow;
-
-		// A request that asks to log out is never redirected away from the logout. This
-		// guard only matters on wp-login.php, and only for a logout URL that omits
-		// `action=logout` -- the URL modify_logout_url() builds always carries it. Since
-		// the logout moved to `init`, this method now runs first, and without the guard
-		// such a request would redirect to the home page still logged in, with no error.
-		if ( isset( $_GET['basic-auth-logout'] ) ) {
-			return;
-		}
 
 		// Check if we're on the login page and have Basic Auth credentials
 		if ( 'wp-login.php' === $pagenow &&
