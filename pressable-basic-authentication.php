@@ -130,21 +130,21 @@ class Pressable_Basic_Auth {
 			$this->send_auth_headers();
 		}
 
-		// A request that is about to log out still has to clear the authentication gate
-		// above -- that is what keeps an anonymous logout from reaching wp_logout() -- but
-		// it must not be given a session that handle_logout_request() discards moments
-		// later on `init`. Establishing one fires set_auth_cookie and set_logged_in_cookie
-		// on what is only ever a logout, which an audit or session-tracking plugin can
-		// reasonably record as a real login.
+		// A request asking to log out must still clear the authentication gate above --
+		// that is what keeps an anonymous caller from reaching wp_logout() -- but it must
+		// not be given a session that handle_logout_request() discards moments later on
+		// `init`. Establishing one fires set_auth_cookie and set_logged_in_cookie on what
+		// is only ever a logout, which an audit or session-tracking plugin can reasonably
+		// record as a real login.
 		//
-		// This skips the whole session setup, not merely the cookies. Without
-		// wp_set_current_user() the wp_logout() that follows sees get_current_user_id() as
-		// 0, so it passes 0 to `wp_logout` subscribers and reaps no session token. That is
-		// what 1.0.2 did too -- its logout ran before any of this -- so it restores the
-		// released behaviour rather than inventing a third one.
+		// Skipping wp_set_current_user() as well as the cookies is correct, not a
+		// shortcut: execution only reaches here when no WordPress session exists (a live
+		// one returns above), so there is no logged-in user for the following wp_logout()
+		// to name or whose session token it could reap. It reports 0 because 0 is true.
 		//
-		// Position matters: ahead of the credential checks this would also skip the 401,
-		// reopening the anonymous logout path. tests/hook-registration-test.php pins it.
+		// Placement is load-bearing in both directions. Above the credential handling this
+		// would skip the 401 as well, readmitting the unauthenticated caller it exists to
+		// exclude; below the cookie calls it would do nothing at all.
 		if ( isset( $_GET['basic-auth-logout'] ) ) {
 			return;
 		}

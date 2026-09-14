@@ -126,24 +126,33 @@ check(
 	'the logout handler is public, as a hook callback must be'
 );
 
-// The guard that skips session setup on a logout request has to sit AFTER the
-// credential checks. Moved above them it would still suppress the spurious session
-// -- so the symptom it was added for would look fixed -- while also skipping the
-// 401, letting an anonymous ?basic-auth-logout=1 reach wp_logout() again. That is
-// precisely the unauthenticated trigger this plugin's logout move closed, so the
-// wrong placement is worse than no guard at all and is pinned here by position.
-$force        = source_of( 'force_basic_authentication' );
-$guard_at     = strpos( $force, "\$_GET['basic-auth-logout']" );
-$validated_at = strpos( $force, 'wp_authenticate(' );
+// The guard that skips session setup on a logout request is bracketed rather than
+// merely ordered, because both neighbours are hazards. Above the credential
+// handling it would suppress the spurious session -- so the symptom it was added
+// for would look fixed -- while also skipping the 401, readmitting the
+// unauthenticated caller the logout move excluded. Below the cookie calls it would
+// be inert. Anchoring on the LAST send_auth_headers() rather than wp_authenticate()
+// is deliberate: between the two, a guard still clears every ordering check yet lets
+// INVALID credentials bypass the challenge.
+$force          = source_of( 'force_basic_authentication' );
+$guard_at       = strpos( $force, "\$_GET['basic-auth-logout']" );
+$last_challenge = strrpos( $force, 'send_auth_headers(' );
+$cookie_at      = strpos( $force, 'wp_set_auth_cookie(' );
 
 check(
-	false !== $guard_at && false !== $validated_at && $guard_at > $validated_at,
-	'the logout guard sits after wp_authenticate(), so a logout still requires credentials'
+	false !== $guard_at && false !== $last_challenge && $guard_at > $last_challenge,
+	'the logout guard sits after every credential challenge, so a logout still requires valid credentials'
 );
 
 check(
-	false !== $guard_at && false !== strpos( $force, 'wp_set_auth_cookie(' ) && $guard_at < strpos( $force, 'wp_set_auth_cookie(' ),
+	false !== $guard_at && false !== $cookie_at && $guard_at < $cookie_at,
 	'the logout guard sits before wp_set_auth_cookie(), so a logout establishes no session'
+);
+
+// Position alone would be satisfied by a guard whose body no longer returns.
+check(
+	1 === preg_match( '/if \(\s*isset\(\s*\$_GET\[.basic-auth-logout.\]\s*\)\s*\)\s*\{\s*return;\s*\}/', $force ),
+	'the logout guard actually returns, rather than only appearing in the right place'
 );
 
 echo "\n";
