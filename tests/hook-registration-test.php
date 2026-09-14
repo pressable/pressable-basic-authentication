@@ -126,6 +126,26 @@ check(
 	'the logout handler is public, as a hook callback must be'
 );
 
+// The guard that skips session setup on a logout request has to sit AFTER the
+// credential checks. Moved above them it would still suppress the spurious session
+// -- so the symptom it was added for would look fixed -- while also skipping the
+// 401, letting an anonymous ?basic-auth-logout=1 reach wp_logout() again. That is
+// precisely the unauthenticated trigger this plugin's logout move closed, so the
+// wrong placement is worse than no guard at all and is pinned here by position.
+$force        = source_of( 'force_basic_authentication' );
+$guard_at     = strpos( $force, "\$_GET['basic-auth-logout']" );
+$validated_at = strpos( $force, 'wp_authenticate(' );
+
+check(
+	false !== $guard_at && false !== $validated_at && $guard_at > $validated_at,
+	'the logout guard sits after wp_authenticate(), so a logout still requires credentials'
+);
+
+check(
+	false !== $guard_at && false !== strpos( $force, 'wp_set_auth_cookie(' ) && $guard_at < strpos( $force, 'wp_set_auth_cookie(' ),
+	'the logout guard sits before wp_set_auth_cookie(), so a logout establishes no session'
+);
+
 echo "\n";
 
 if ( $failures ) {
