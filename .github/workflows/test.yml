@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Lint and hook registration
@@ -14,6 +17,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # The job lints and executes PHP straight from the checked-out pull
+          # request, so the GITHUB_TOKEN must not be left in the local git
+          # config where that code could read it.
+          persist-credentials: false
 
       - name: Report PHP version
         run: php -v
