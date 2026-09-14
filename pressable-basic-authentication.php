@@ -130,6 +130,17 @@ class Pressable_Basic_Auth {
 			$this->send_auth_headers();
 		}
 
+		// A request that is about to log out still has to clear the authentication gate
+		// above -- that is what keeps an anonymous logout from reaching wp_logout() -- but
+		// it must not be given a session that handle_logout_request() discards moments
+		// later on `init`. Establishing one anyway fires set_current_user, set_auth_cookie
+		// and set_logged_in_cookie on what is only ever a logout, which an audit or
+		// session-tracking plugin can reasonably record as a real login. Returning here
+		// leaves the 401 paths untouched and skips only the cookie-setting.
+		if ( isset( $_GET['basic-auth-logout'] ) ) {
+			return;
+		}
+
 		// Log the user in programmatically.
 		wp_set_current_user( $user->ID );
 		wp_set_auth_cookie( $user->ID );
