@@ -138,9 +138,11 @@ class Pressable_Basic_Auth {
 		// record as a real login.
 		//
 		// Skipping wp_set_current_user() as well as the cookies is correct, not a
-		// shortcut: execution only reaches here when no WordPress session exists (a live
-		// one returns above), so there is no logged-in user for the following wp_logout()
-		// to name or whose session token it could reap. It reports 0 because 0 is true.
+		// shortcut: execution only reaches here when nobody is logged in -- a live session
+		// returns above -- so there is no established identity for the following
+		// wp_logout() to report. It passes whatever get_current_user_id() actually holds,
+		// which is 0, instead of one this method manufactured moments earlier purely to
+		// tear it down again.
 		//
 		// Placement is load-bearing in both directions. Above the credential handling this
 		// would skip the 401 as well, readmitting the unauthenticated caller it exists to
