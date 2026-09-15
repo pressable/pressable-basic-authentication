@@ -218,13 +218,31 @@ class Pressable_Basic_Auth {
         // not anchored at its start, because a subdirectory or multisite subsite
         // install legitimately serves these endpoints below a prefix
         // (`/sub1/wp-json/wp/v2/posts`).
-        $request_path = '/' . ltrim((string) parse_url($request_uri, PHP_URL_PATH), '/');
+        // Compared after decoding, because the server decodes before it resolves the
+        // path: `/xmlrpc%2ephp` and `/xmlrpc.php` reach the same file.
+        $request_path = rawurldecode('/' . ltrim((string) parse_url($request_uri, PHP_URL_PATH), '/'));
         $haystack     = rtrim($request_path, '/') . '/';
 
+        // A path carrying a `.` or `..` segment is not the path that gets served --
+        // the server resolves those when mapping the request to a file, so
+        // `/xmlrpc.php/../wp-login.php` reads as the excluded xmlrpc endpoint while
+        // actually reaching wp-login.php. That served the login form and allowed a
+        // full WordPress login with no Basic Auth. A genuine excluded endpoint never
+        // contains a traversal segment, so refuse to waive authentication for one
+        // rather than trying to re-implement the server's resolution here.
+        //
+        // Only the endpoint matching is skipped, not the constant checks below: a
+        // real xmlrpc.php request defines XMLRPC_REQUEST before this plugin loads and
+        // stays excluded on that evidence, which cannot be spelled by a caller.
+        $segments       = explode('/', $haystack);
+        $has_traversal  = in_array('..', $segments, true) || in_array('.', $segments, true);
+
         // Check all excluded endpoints
-        foreach ($excluded_endpoints as $endpoint) {
-            if (strpos($haystack, '/' . trim($endpoint, '/') . '/') !== false) {
-                return true;
+        if (!$has_traversal) {
+            foreach ($excluded_endpoints as $endpoint) {
+                if (strpos($haystack, '/' . trim($endpoint, '/') . '/') !== false) {
+                    return true;
+                }
             }
         }
 

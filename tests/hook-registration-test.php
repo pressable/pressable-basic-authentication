@@ -194,6 +194,22 @@ foreach ( array(
 	check( false === skips_auth_for( $uri ), "an excluded endpoint in the query string does not waive auth: $uri" );
 }
 
+// A path carrying a traversal segment is not the path the server ends up serving,
+// so it must never waive authentication: `/xmlrpc.php/../wp-login.php` resolves to
+// wp-login.php while reading as the excluded xmlrpc endpoint, which served the login
+// form and allowed a full WordPress login with no Basic Auth at all.
+foreach ( array(
+	'/xmlrpc.php/../wp-login.php',
+	'/xmlrpc.php/%2e%2e/wp-login.php',
+	'/xmlrpc%2ephp/../wp-login.php',
+	'/wp-json/wp/v2/../wp-login.php',
+	'/wp-json/wp/v2/../../wp-login.php',
+	'/xmlrpc.php/./../wp-login.php',
+	'/xmlrpc.php/../',
+) as $uri ) {
+	check( false === skips_auth_for( $uri ), "a traversal segment does not waive auth: $uri" );
+}
+
 // A needle must match whole path segments, not any substring of one.
 check( false === skips_auth_for( '/notwp-json/wp/v2' ), 'a path segment merely ENDING in an excluded endpoint does not waive auth' );
 
