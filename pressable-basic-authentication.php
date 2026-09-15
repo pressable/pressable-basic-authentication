@@ -194,9 +194,24 @@ class Pressable_Basic_Auth {
             return true;
         }
 
+        // Match the request PATH only, never the raw REQUEST_URI. A substring test
+        // against the whole URI also reads the query string, so any caller could
+        // disable this plugin on any URL by appending an excluded endpoint as a
+        // parameter value -- `/?x=wp-json/wp/v2` served the front page, and the same
+        // string on wp-login.php exposed the login form and allowed a full WordPress
+        // login with no Basic Auth at all.
+        //
+        // Both ends are anchored on a slash so the needle matches whole path
+        // segments: `/notwp-json/wp/v2` must not satisfy `wp-json/wp/v2`. The path is
+        // not anchored at its start, because a subdirectory or multisite subsite
+        // install legitimately serves these endpoints below a prefix
+        // (`/sub1/wp-json/wp/v2/posts`).
+        $request_path = '/' . ltrim((string) parse_url($request_uri, PHP_URL_PATH), '/');
+        $haystack     = rtrim($request_path, '/') . '/';
+
         // Check all excluded endpoints
         foreach ($excluded_endpoints as $endpoint) {
-            if (strpos($request_uri, $endpoint) !== false) {
+            if (strpos($haystack, '/' . trim($endpoint, '/') . '/') !== false) {
                 return true;
             }
         }

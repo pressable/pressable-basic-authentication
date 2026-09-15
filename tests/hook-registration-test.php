@@ -155,6 +155,61 @@ check(
 	'the logout guard actually returns, rather than only appearing in the right place'
 );
 
+/**
+ * Whether should_skip_auth() would waive Basic Authentication for a request URI.
+ *
+ * Invoked for real rather than inspected as source: the method touches only
+ * basename() and parse_url(), so it runs without WordPress, and a behavioural
+ * assertion cannot be satisfied by a rewrite that merely looks different.
+ *
+ * @param string $uri Value to place in REQUEST_URI.
+ * @return bool
+ */
+function skips_auth_for( $uri ) {
+	$_SERVER['REQUEST_URI'] = $uri;
+	$_SERVER['SCRIPT_NAME'] = '/index.php';
+
+	$method = new ReflectionMethod( 'Pressable_Basic_Auth', 'should_skip_auth' );
+	$method->setAccessible( true );
+
+	return (bool) $method->invoke( new Pressable_Basic_Auth() );
+}
+
+// An excluded endpoint appearing in the QUERY STRING must never waive
+// authentication. Matching those needles against the whole REQUEST_URI let any
+// caller disable the plugin on any URL -- `/?x=wp-json/wp/v2` served the front
+// page, and the same string on wp-login.php exposed the login form and allowed a
+// full WordPress login with no Basic Auth at all.
+foreach ( array(
+	'/?x=wp-json/wp/v2',
+	'/?foo=xmlrpc.php',
+	'/?x=wp-json/jetpack',
+	'/?x=wp-json/wp/v3',
+	'/wp-login.php?x=wp-json/wp/v2',
+	'/?p=1&x=wp-json/wp/v2',
+) as $uri ) {
+	check( false === skips_auth_for( $uri ), "an excluded endpoint in the query string does not waive auth: $uri" );
+}
+
+// A needle must match whole path segments, not any substring of one.
+check( false === skips_auth_for( '/notwp-json/wp/v2' ), 'a path segment merely ENDING in an excluded endpoint does not waive auth' );
+
+// The genuine exclusions still have to work, including below a subdirectory or
+// multisite subsite prefix -- which is why the path is not anchored at its start.
+foreach ( array(
+	'/xmlrpc.php',
+	'/wp-json/wp/v2/posts',
+	'/wp-json/wp/v2/posts?per_page=1',
+	'/wp-json/jetpack/v4/whatever',
+	'/wp-json/wp/v3/anything',
+	'/sub1/wp-json/wp/v2/posts',
+	'/sub1/xmlrpc.php',
+) as $uri ) {
+	check( true === skips_auth_for( $uri ), "a genuine excluded endpoint still waives auth: $uri" );
+}
+
+check( false === skips_auth_for( '/' ), 'an ordinary request is still gated' );
+
 echo "\n";
 
 if ( $failures ) {
