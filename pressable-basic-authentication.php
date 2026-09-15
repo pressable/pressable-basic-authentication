@@ -457,11 +457,22 @@ class Pressable_Basic_Auth {
 	/**
 	 * Check if the current request is an AJAX request
 	 *
+	 * Matched only on the `DOING_AJAX` constant, which WordPress defines itself
+	 * when `admin-ajax.php` runs -- evidence from the request's own execution that
+	 * a caller cannot forge. The `X-Requested-With: XMLHttpRequest` request header
+	 * was deliberately removed: it is set by the caller, so keying an auth waiver
+	 * on it let any anonymous request turn Basic Auth off on any URL,
+	 * `wp-login.php` included, by sending one header -- the same full bypass the
+	 * `should_skip_auth()` rewrite closes for path spellings, reached with a
+	 * header instead. It covered nothing the constant does not: real WordPress
+	 * AJAX runs through admin-ajax.php with `DOING_AJAX` set, and the REST API is
+	 * handled separately by `should_skip_auth()`. A custom endpoint that needs
+	 * access sends Basic Auth like anything else.
+	 *
 	 * @return bool
 	 */
 	private function is_ajax_request() {
-		return ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ||
-		       ( ! empty( $_SERVER['HTTP_X_REQUESTED_WITH'] ) && 'xmlhttprequest' === strtolower( $_SERVER['HTTP_X_REQUESTED_WITH'] ) );
+		return defined( 'DOING_AJAX' ) && DOING_AJAX;
 	}
 
 	/**

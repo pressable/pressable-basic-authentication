@@ -308,6 +308,50 @@ foreach ( array(
 
 check( false === skips_auth_for( '/' ), 'an ordinary request is still gated' );
 
+// is_ajax_request() is tested directly rather than through skip_request(): this file runs
+// under the CLI SAPI, so is_cli_request() (a sibling arm of skip_request()) is always true
+// here and would mask everything else.
+function is_ajax_for( $x_requested_with ) {
+	static $plugin = null;
+
+	if ( null === $plugin ) {
+		$plugin = new Pressable_Basic_Auth();
+	}
+
+	$original = isset( $_SERVER['HTTP_X_REQUESTED_WITH'] ) ? $_SERVER['HTTP_X_REQUESTED_WITH'] : null;
+	if ( null === $x_requested_with ) {
+		unset( $_SERVER['HTTP_X_REQUESTED_WITH'] );
+	} else {
+		$_SERVER['HTTP_X_REQUESTED_WITH'] = $x_requested_with;
+	}
+
+	try {
+		$method = new ReflectionMethod( 'Pressable_Basic_Auth', 'is_ajax_request' );
+		$method->setAccessible( true );
+
+		return (bool) $method->invoke( $plugin );
+	} finally {
+		if ( null === $original ) {
+			unset( $_SERVER['HTTP_X_REQUESTED_WITH'] );
+		} else {
+			$_SERVER['HTTP_X_REQUESTED_WITH'] = $original;
+		}
+	}
+}
+
+// The `X-Requested-With: XMLHttpRequest` request header must NOT count as AJAX. It is
+// caller-controlled, so keying an auth waiver on it let any anonymous request turn Basic
+// Auth off on any URL, wp-login.php included, by sending one header (caught in review by
+// Mitch). is_ajax_request() is the first arm of skip_request(), so a true here is a waiver.
+check( false === is_ajax_for( 'XMLHttpRequest' ), 'the X-Requested-With header does not count as AJAX' );
+check( false === is_ajax_for( 'xmlhttprequest' ), 'the X-Requested-With header (lowercased) does not count as AJAX' );
+check( false === is_ajax_for( null ), 'a plain request with no such header is not AJAX' );
+
+// Real WordPress AJAX still bypasses: admin-ajax.php defines DOING_AJAX itself, which a
+// caller cannot forge. Asserted last, because define() is process-global and irreversible.
+define( 'DOING_AJAX', true );
+check( true === is_ajax_for( null ), 'a genuine DOING_AJAX request is still AJAX (bypasses)' );
+
 echo "\n";
 
 if ( $failures ) {
