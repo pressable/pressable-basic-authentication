@@ -1,10 +1,10 @@
 name: Tests
 
+# Pull requests only. A push to main runs the same checks as the `check` job in
+# main.yml, where they additionally gate the release; running them here too would
+# just duplicate that.
 on:
   pull_request:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read

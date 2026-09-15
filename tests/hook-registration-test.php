@@ -169,13 +169,29 @@ check(
  * @return bool
  */
 function skips_auth_for( $uri ) {
+	// $_SERVER is restored and the plugin instance reused so these checks leave no
+	// state behind: every hook-wiring check above reads $GLOBALS['hooks'] and
+	// $_SERVER, and a later one appended below this point would otherwise read
+	// whatever the last URI here happened to set.
+	static $plugin = null;
+
+	if ( null === $plugin ) {
+		$plugin = new Pressable_Basic_Auth();
+	}
+
+	$original = $_SERVER;
+
 	$_SERVER['REQUEST_URI'] = $uri;
 	$_SERVER['SCRIPT_NAME'] = '/index.php';
 
-	$method = new ReflectionMethod( 'Pressable_Basic_Auth', 'should_skip_auth' );
-	$method->setAccessible( true );
+	try {
+		$method = new ReflectionMethod( 'Pressable_Basic_Auth', 'should_skip_auth' );
+		$method->setAccessible( true );
 
-	return (bool) $method->invoke( new Pressable_Basic_Auth() );
+		return (bool) $method->invoke( $plugin );
+	} finally {
+		$_SERVER = $original;
+	}
 }
 
 // An excluded endpoint appearing in the QUERY STRING must never waive
