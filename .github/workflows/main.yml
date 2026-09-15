@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           # This job lints and executes repository PHP, so the GITHUB_TOKEN must
           # not be left in the local git config where that code could read it.
@@ -66,7 +66,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          # This job runs `git archive` (a local ref) and the release script,
+          # which uses its own explicit GITHUB_TOKEN -- so the checkout token is
+          # not needed after checkout and must not be left in the git config.
+          persist-credentials: false
 
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
