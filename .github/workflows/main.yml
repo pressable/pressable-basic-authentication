@@ -17,6 +17,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          # This job runs repository PHP (below) before publishing, so the
+          # GITHUB_TOKEN is kept out of the local git config. The release script
+          # receives it explicitly as an env var instead.
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # The floor declared in readme.txt -- the gate should run against the
+          # oldest version the plugin claims to support, not the runner's ambient one.
+          php-version: '8.1'
+          coverage: none
 
       # The release is published straight from this job, and no ordering exists
       # between separate workflow files, so the checks in test.yml cannot gate it

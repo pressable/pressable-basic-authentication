@@ -2,7 +2,7 @@
 Contributors: pressable
 Tags: pressable, basic auth, authentication, security
 Requires at least: 6.7
-Tested up to: 6.8
+Tested up to: 7.1
 Requires PHP: 8.1
 Stable tag: 1.0.5
 License: GPLv2 or later
@@ -41,3 +41,24 @@ No manual installation is necessary.​
 == Screenshots ==​
 
 * Initial release​
+
+== Changelog ==
+
+= 1.0.5 =
+* Fixed: an excluded endpoint appearing anywhere in a request's query string
+  disabled Basic Authentication for that request, including on wp-login.php.
+  Exclusions now match the request path only.
+* Fixed: logging out on a site also running User Switching caused a fatal error.
+* Fixed: a logout request no longer reaches wp_logout() without valid credentials.
+* Fixed: a logout URL without action=logout is no longer redirected away from the
+  logout while still signed in.
+
+= 1.0.4 =
+* Reverted the 1.0.3 changes pending verification. Functionally identical to 1.0.2.
+
+= 1.0.3 =
+* Deferred logout handling to init to avoid the User Switching conflict. Withdrawn
+  in 1.0.4; re-issued, with the exclusion fix above, in 1.0.5.
+
+= 1.0.2 =
+* PHP 8.4 compatibility.

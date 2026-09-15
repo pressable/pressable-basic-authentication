@@ -18,7 +18,10 @@
 // This file defines ABSPATH itself, so the usual `defined( 'ABSPATH' ) || exit`
 // plugin guard cannot protect it. It sits inside the plugin directory, which the
 // web server serves directly without loading WordPress -- so without this guard it
-// answers 200 on a site where Basic Authentication returns 401 for everything else.
+// would print its own output on a site where Basic Authentication returns 401 for
+// everything else. The exit status is not an HTTP status: the request still answers
+// 200, just with an empty body. `/tests export-ignore` keeps the file out of the
+// release zip entirely; this guard is the second layer, for a checkout served direct.
 if ( 'cli' !== php_sapi_name() ) {
 	exit( 1 );
 }

@@ -40,6 +40,18 @@ class Pressable_Basic_Auth {
 		// first, User Switching's `wp_logout` subscriber fatals on a constant it has
 		// not defined yet. Hooking to `init` drops the dependency on load order
 		// entirely: every `plugins_loaded` callback has completed by then.
+		//
+		// The cost of running this late is that output may already have been sent:
+		// anything echoed while plugins load -- a `_doing_it_wrong()` notice under
+		// WP_DEBUG display, a stray BOM -- makes the 401 header and the cookie
+		// clearing below fail, leaving a 200 with no challenge. wp_logout() itself
+		// still runs, so the session is destroyed server-side; what is lost is the
+		// browser-visible half. `plugins_loaded` at PHP_INT_MAX was measured as an
+		// alternative and degrades identically, because the output is emitted during
+		// that same hook. The two requirements are in tension: running after every
+		// `plugins_loaded` callback necessarily means running after any of them may
+		// have printed, and priority 1 -- the only position that avoids output -- is
+		// the position that causes the race above.
 		add_action( 'init', array( $this, 'handle_logout_request' ), 1 );
 
 		// Add filter for logout URL.

@@ -11,8 +11,16 @@ permissions:
 
 jobs:
   test:
-    name: Lint and hook registration
+    name: Lint and hook registration (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared in readme.txt, and a current release. The runner's
+        # ambient PHP is whatever the image ships and tracks neither, so relying
+        # on it tested a version the plugin does not claim to support.
+        php: [ '8.1', '8.4' ]
 
     steps:
       - name: Checkout code
@@ -22,6 +30,12 @@ jobs:
           # request, so the GITHUB_TOKEN must not be left in the local git
           # config where that code could read it.
           persist-credentials: false
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
 
       - name: Report PHP version
         run: php -v
