@@ -221,7 +221,16 @@ class Pressable_Basic_Auth {
         // three shapes: the endpoints above are rewrite targets, so they only mean
         // anything when the server routes the request to index.php. Decoded first,
         // because the server decodes before it resolves.
-        $request_path = rawurldecode('/' . ltrim((string) parse_url($request_uri, PHP_URL_PATH), '/'));
+        // The query and fragment are cut by hand rather than with parse_url(), which
+        // reads a target beginning `//` as a protocol-relative URL and discards the
+        // first segment as an authority. `//wp-login.php/wp-json/wp/v2/` parsed to
+        // `/wp-json/wp/v2/` -- the script vanished, leaving nothing before the
+        // endpoint to object to -- while the server preserved the target, executed
+        // wp-login.php and passed the rest as PATH_INFO. That served the login form
+        // and allowed a full WordPress sign-in with no Basic Auth at all. Collapsing
+        // the leading slashes afterwards is what makes the resulting path comparable.
+        $cut          = strcspn($request_uri, '?#');
+        $request_path = rawurldecode('/' . ltrim(substr($request_uri, 0, $cut), '/'));
         $haystack     = rtrim($request_path, '/') . '/';
 
         // A `.` or `..` segment means the path resolves to something other than what
@@ -276,6 +285,15 @@ class Pressable_Basic_Auth {
      * `/wp-json/wp/v2/custom-route.php` is routed to index.php and dispatched to
      * the REST API -- so an earlier version of this check, which scanned the whole
      * path, wrongly demanded authentication for a valid REST request.
+     *
+     * Known limitation, accepted deliberately: a WordPress install inside a
+     * DIRECTORY named `*.php` has a prefix that reads like a script but is not one,
+     * so REST under it is challenged rather than excluded. Separating the two needs
+     * either the absence of PATH_INFO as evidence -- trusting a variable's absence,
+     * which turns this fail-closed edge case into a fail-open one wherever the SAPI
+     * does not populate it -- or a filesystem lookup that a subdirectory install
+     * defeats anyway. Refusing a REST request under a pathologically named directory
+     * is the cheaper error of the two.
      *
      * @param string $prefix The portion of the request path preceding the endpoint.
      * @return bool

@@ -51,9 +51,10 @@ No manual installation is necessary.​
   (`/?x=wp-json/wp/v2`), by reaching the page through one
   (`/xmlrpc.php/../wp-login.php`), or by trailing one after it
   (`/wp-login.php/wp-json/wp/v2/`). All three served the login form and allowed a
-  full WordPress sign-in. xmlrpc.php is now matched on the script the server
-  actually resolved, and a REST endpoint only when nothing preceding it in the
-  request path names a script the server would execute instead.
+  full WordPress sign-in, as did a request target beginning `//`
+  (`//wp-login.php/wp-json/wp/v2/`). xmlrpc.php is now matched on the script the
+  server actually resolved, and a REST endpoint only when nothing preceding it in
+  the request path names a script the server would execute instead.
 * Fixed: logging out on a site also running User Switching caused a fatal error.
 * Fixed: a logout request no longer reaches wp_logout() without valid credentials.
 * Fixed: a logout URL without action=logout is no longer redirected away from the

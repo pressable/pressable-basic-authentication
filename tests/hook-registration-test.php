@@ -247,6 +247,23 @@ foreach ( array(
 	check( true === skips_auth_for( $uri ), "a .php segment INSIDE a REST route still waives auth: $uri" );
 }
 
+// A target beginning `//` must not lose its first segment. parse_url() reads such a
+// target as protocol-relative and discards that segment as an authority, so
+// `//wp-login.php/wp-json/wp/v2/` parsed to `/wp-json/wp/v2/` with nothing left
+// before the endpoint -- while the server preserved it, ran wp-login.php and served
+// the login form with no Basic Auth at all. Caught by the Codex pre-PR review.
+foreach ( array(
+	array( '//wp-login.php/wp-json/wp/v2/', '/wp-login.php' ),
+	array( '///wp-login.php/wp-json/wp/v2/', '/wp-login.php' ),
+	array( '//index.php/wp-json/wp/v2/', '/index.php' ),
+	array( '//wp-login.php/wp-json%2Fwp%2Fv2', '/wp-login.php' ),
+) as $case ) {
+	check( false === skips_auth_for( $case[0], $case[1] ), "a protocol-relative-looking target keeps its first segment: {$case[0]}" );
+}
+
+// Collapsing those leading slashes must not break the endpoint underneath them.
+check( true === skips_auth_for( '//wp-json/wp/v2' ), 'an endpoint behind a doubled leading slash is still excluded' );
+
 // A path carrying a traversal segment is not the path the server ends up serving,
 // so it must never waive authentication: `/xmlrpc.php/../wp-login.php` resolves to
 // wp-login.php while reading as the excluded xmlrpc endpoint, which served the login
