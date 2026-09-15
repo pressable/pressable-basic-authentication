@@ -15,3 +15,5 @@
 /composer.json export-ignore
 /composer.lock export-ignore
 /.DS_Store export-ignore
+# Tests are not part of the distributed plugin.
+/tests export-ignore
