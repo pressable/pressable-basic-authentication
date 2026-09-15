@@ -46,12 +46,14 @@ No manual installation is necessary.​
 
 = 1.0.5 =
 * Fixed: Basic Authentication could be bypassed entirely on any URL, with no
-  credentials, by making the request resemble one of the endpoints excluded from
-  authentication -- either by naming one in the query string
-  (`/?x=wp-json/wp/v2`) or by reaching a gated page through one
-  (`/xmlrpc.php/../wp-login.php`). Both served the login form and allowed a full
-  WordPress sign-in. Exclusions now match the decoded request path only, and are
-  refused for any path containing a `.` or `..` segment.
+  credentials, by making a request to a gated page resemble one of the endpoints
+  excluded from authentication -- by naming one in the query string
+  (`/?x=wp-json/wp/v2`), by reaching the page through one
+  (`/xmlrpc.php/../wp-login.php`), or by trailing one after it
+  (`/wp-login.php/wp-json/wp/v2/`). All three served the login form and allowed a
+  full WordPress sign-in. xmlrpc.php is now matched on the script the server
+  actually resolved, and the REST endpoints only on a decoded request path that
+  the server routes to index.php.
 * Fixed: logging out on a site also running User Switching caused a fatal error.
 * Fixed: a logout request no longer reaches wp_logout() without valid credentials.
 * Fixed: a logout URL without action=logout is no longer redirected away from the

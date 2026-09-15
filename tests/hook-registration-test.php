@@ -165,10 +165,14 @@ check(
  * basename() and parse_url(), so it runs without WordPress, and a behavioural
  * assertion cannot be satisfied by a rewrite that merely looks different.
  *
- * @param string $uri Value to place in REQUEST_URI.
+ * @param string $uri         Value to place in REQUEST_URI.
+ * @param string $script_name Value to place in SCRIPT_NAME -- the script the server
+ *                            resolved, which is what xmlrpc.php is matched on and
+ *                            what a PATH_INFO request leaves pointing at the script
+ *                            rather than at the endpoint trailing it.
  * @return bool
  */
-function skips_auth_for( $uri ) {
+function skips_auth_for( $uri, $script_name = '/index.php' ) {
 	// $_SERVER is restored and the plugin instance reused so these checks leave no
 	// state behind: every hook-wiring check above reads $GLOBALS['hooks'] and
 	// $_SERVER, and a later one appended below this point would otherwise read
@@ -182,7 +186,7 @@ function skips_auth_for( $uri ) {
 	$original = $_SERVER;
 
 	$_SERVER['REQUEST_URI'] = $uri;
-	$_SERVER['SCRIPT_NAME'] = '/index.php';
+	$_SERVER['SCRIPT_NAME'] = $script_name;
 
 	try {
 		$method = new ReflectionMethod( 'Pressable_Basic_Auth', 'should_skip_auth' );
@@ -210,6 +214,21 @@ foreach ( array(
 	check( false === skips_auth_for( $uri ), "an excluded endpoint in the query string does not waive auth: $uri" );
 }
 
+// Trailing segments after a real script land in PATH_INFO: the server executes the
+// script and hands the rest to it, so an endpoint spelled there is decoration on a
+// gated page. `/wp-login.php/wp-json/wp/v2/` served the login form and allowed a
+// full WordPress sign-in with no Basic Auth at all. SCRIPT_NAME is passed as the
+// server would set it, and the guard holds on the path alone regardless.
+foreach ( array(
+	array( '/wp-login.php/wp-json/wp/v2/', '/wp-login.php' ),
+	array( '/wp-login.php/xmlrpc.php/', '/wp-login.php' ),
+	array( '/index.php/wp-json/wp/v2/', '/index.php' ),
+	array( '/wp-login.PHP/wp-json/wp/v2/', '/wp-login.PHP' ),
+	array( '/sub1/wp-login.php/wp-json/wp/v2/', '/wp-login.php' ),
+) as $case ) {
+	check( false === skips_auth_for( $case[0], $case[1] ), "a PATH_INFO endpoint after a script does not waive auth: {$case[0]}" );
+}
+
 // A path carrying a traversal segment is not the path the server ends up serving,
 // so it must never waive authentication: `/xmlrpc.php/../wp-login.php` resolves to
 // wp-login.php while reading as the excluded xmlrpc endpoint, which served the login
@@ -232,15 +251,24 @@ check( false === skips_auth_for( '/notwp-json/wp/v2' ), 'a path segment merely E
 // The genuine exclusions still have to work, including below a subdirectory or
 // multisite subsite prefix -- which is why the path is not anchored at its start.
 foreach ( array(
-	'/xmlrpc.php',
 	'/wp-json/wp/v2/posts',
 	'/wp-json/wp/v2/posts?per_page=1',
 	'/wp-json/jetpack/v4/whatever',
 	'/wp-json/wp/v3/anything',
 	'/sub1/wp-json/wp/v2/posts',
-	'/sub1/xmlrpc.php',
 ) as $uri ) {
 	check( true === skips_auth_for( $uri ), "a genuine excluded endpoint still waives auth: $uri" );
+}
+
+// xmlrpc.php is matched on SCRIPT_NAME, not on the requested path, so it holds
+// however the request was spelled -- including below a multisite subsite prefix,
+// which the network rewrite resolves back to the root script.
+foreach ( array(
+	array( '/xmlrpc.php', '/xmlrpc.php' ),
+	array( '/sub1/xmlrpc.php', '/xmlrpc.php' ),
+	array( '/xmlrpc.php?for=jetpack', '/xmlrpc.php' ),
+) as $case ) {
+	check( true === skips_auth_for( $case[0], $case[1] ), "xmlrpc.php still waives auth via SCRIPT_NAME: {$case[0]}" );
 }
 
 check( false === skips_auth_for( '/' ), 'an ordinary request is still gated' );

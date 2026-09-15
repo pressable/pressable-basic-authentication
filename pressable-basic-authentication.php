@@ -189,9 +189,10 @@ class Pressable_Basic_Auth {
      * @return bool
      */
     private function should_skip_auth() {
-        // List of endpoints to exclude from Basic Auth
+        // REST rewrite targets only. xmlrpc.php is deliberately NOT in this list --
+        // it is matched on SCRIPT_NAME below, which is authoritative in a way a
+        // requested path is not.
         $excluded_endpoints = array(
-            'xmlrpc.php',
             'wp-json/jetpack',
             'wp-json/wp/v2',
             'wp-json/wp/v3'
@@ -201,44 +202,48 @@ class Pressable_Basic_Auth {
         $request_uri = $_SERVER['REQUEST_URI'] ?? '';
         $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
 
-        // Check if this is a direct xmlrpc.php request
+        // SCRIPT_NAME is the script the server actually resolved, so this holds
+        // however the caller spelled the request.
         if (basename($script_name) === 'xmlrpc.php') {
             return true;
         }
 
-        // Match the request PATH only, never the raw REQUEST_URI. A substring test
-        // against the whole URI also reads the query string, so any caller could
-        // disable this plugin on any URL by appending an excluded endpoint as a
-        // parameter value -- `/?x=wp-json/wp/v2` served the front page, and the same
-        // string on wp-login.php exposed the login form and allowed a full WordPress
-        // login with no Basic Auth at all.
+        // Everything below matches the REQUESTED path, which is not necessarily
+        // what the server serves. Three spellings made a gated page look like an
+        // excluded endpoint, each waiving authentication entirely and allowing a
+        // full WordPress sign-in with no credentials:
         //
-        // Both ends are anchored on a slash so the needle matches whole path
-        // segments: `/notwp-json/wp/v2` must not satisfy `wp-json/wp/v2`. The path is
-        // not anchored at its start, because a subdirectory or multisite subsite
-        // install legitimately serves these endpoints below a prefix
-        // (`/sub1/wp-json/wp/v2/posts`).
-        // Compared after decoding, because the server decodes before it resolves the
-        // path: `/xmlrpc%2ephp` and `/xmlrpc.php` reach the same file.
+        //   /?x=wp-json/wp/v2             query string read as part of the path
+        //   /xmlrpc.php/../wp-login.php   `..` resolved by the server afterwards
+        //   /wp-login.php/wp-json/wp/v2/  trailing segments land in PATH_INFO
+        //
+        // The guard below is written against the general fault rather than those
+        // three shapes: the endpoints above are rewrite targets, so they only mean
+        // anything when the server routes the request to index.php. Decoded first,
+        // because the server decodes before it resolves.
         $request_path = rawurldecode('/' . ltrim((string) parse_url($request_uri, PHP_URL_PATH), '/'));
         $haystack     = rtrim($request_path, '/') . '/';
 
-        // A path carrying a `.` or `..` segment is not the path that gets served --
-        // the server resolves those when mapping the request to a file, so
-        // `/xmlrpc.php/../wp-login.php` reads as the excluded xmlrpc endpoint while
-        // actually reaching wp-login.php. That served the login form and allowed a
-        // full WordPress login with no Basic Auth. A genuine excluded endpoint never
-        // contains a traversal segment, so refuse to waive authentication for one
-        // rather than trying to re-implement the server's resolution here.
-        //
-        // Only the endpoint matching is skipped, not the constant checks below: a
-        // real xmlrpc.php request defines XMLRPC_REQUEST before this plugin loads and
-        // stays excluded on that evidence, which cannot be spelled by a caller.
-        $segments       = explode('/', $haystack);
-        $has_traversal  = in_array('..', $segments, true) || in_array('.', $segments, true);
+        // A `.php` segment means the server is executing that script and handing
+        // the rest to it as PATH_INFO; a `.` or `..` segment means the path is
+        // resolved to something other than what it reads as. In neither case is the
+        // request routed to index.php, so an endpoint appearing in it is decoration,
+        // not a destination -- refuse rather than re-implement the server's own
+        // path resolution here.
+        $serves_another_script = false;
 
-        // Check all excluded endpoints
-        if (!$has_traversal) {
+        foreach (explode('/', $haystack) as $segment) {
+            if ('.' === $segment || '..' === $segment || '.php' === strtolower(substr($segment, -4))) {
+                $serves_another_script = true;
+                break;
+            }
+        }
+
+        // Check all excluded endpoints. Anchored on a slash at both ends so a needle
+        // matches whole path segments -- `/notwp-json/wp/v2` must not satisfy
+        // `wp-json/wp/v2` -- but not anchored at the start of the path, because a
+        // subdirectory or multisite subsite install serves these below a prefix.
+        if (!$serves_another_script) {
             foreach ($excluded_endpoints as $endpoint) {
                 if (strpos($haystack, '/' . trim($endpoint, '/') . '/') !== false) {
                     return true;
@@ -246,7 +251,9 @@ class Pressable_Basic_Auth {
             }
         }
 
-        // Check WordPress constants
+        // Check WordPress constants. xmlrpc.php and the REST bootstrap define these
+        // themselves, so they are evidence from the request's own execution rather
+        // than from how it was spelled.
         if (defined('XMLRPC_REQUEST') && XMLRPC_REQUEST) {
             return true;
         }
