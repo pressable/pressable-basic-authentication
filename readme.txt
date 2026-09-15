@@ -55,6 +55,10 @@ No manual installation is necessary.​
   (`//wp-login.php/wp-json/wp/v2/`). xmlrpc.php is now matched on the script the
   server actually resolved, and a REST endpoint only when nothing preceding it in
   the request path names a script the server would execute instead.
+* Fixed: sending the `X-Requested-With: XMLHttpRequest` request header waived
+  Basic Authentication on any URL, a full sign-in included. That header is
+  caller-supplied, so it no longer counts as AJAX -- only WordPress's own
+  `DOING_AJAX` constant (set by admin-ajax.php) does.
 * Fixed: logging out on a site also running User Switching caused a fatal error.
 * Fixed: a logout request no longer reaches wp_logout() without valid credentials.
 * Fixed: a logout URL without action=logout is no longer redirected away from the
