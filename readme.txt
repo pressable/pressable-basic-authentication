@@ -2,9 +2,9 @@
 Contributors: pressable
 Tags: pressable, basic auth, authentication, security
 Requires at least: 6.7
-Tested up to: 6.8
+Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.0.4
+Stable tag: 1.0.5
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -41,3 +41,35 @@ No manual installation is necessary.​
 == Screenshots ==​
 
 * Initial release​
+
+== Changelog ==
+
+= 1.0.5 =
+* Fixed: Basic Authentication could be bypassed entirely on any URL, with no
+  credentials, by making a request to a gated page resemble one of the endpoints
+  excluded from authentication -- by naming one in the query string
+  (`/?x=wp-json/wp/v2`), by reaching the page through one
+  (`/xmlrpc.php/../wp-login.php`), or by trailing one after it
+  (`/wp-login.php/wp-json/wp/v2/`). All three served the login form and allowed a
+  full WordPress sign-in, as did a request target beginning `//`
+  (`//wp-login.php/wp-json/wp/v2/`). xmlrpc.php is now matched on the script the
+  server actually resolved, and a REST endpoint only when nothing preceding it in
+  the request path names a script the server would execute instead.
+* Fixed: sending the `X-Requested-With: XMLHttpRequest` request header waived
+  Basic Authentication on any URL, a full sign-in included. That header is
+  caller-supplied, so it no longer counts as AJAX -- only WordPress's own
+  `DOING_AJAX` constant (set by admin-ajax.php) does.
+* Fixed: logging out on a site also running User Switching caused a fatal error.
+* Fixed: a logout request no longer reaches wp_logout() without valid credentials.
+* Fixed: a logout URL without action=logout is no longer redirected away from the
+  logout while still signed in.
+
+= 1.0.4 =
+* Reverted the 1.0.3 changes pending verification. Functionally identical to 1.0.2.
+
+= 1.0.3 =
+* Deferred logout handling to init to avoid the User Switching conflict. Withdrawn
+  in 1.0.4; re-issued, with the exclusion fix above, in 1.0.5.
+
+= 1.0.2 =
+* PHP 8.4 compatibility.

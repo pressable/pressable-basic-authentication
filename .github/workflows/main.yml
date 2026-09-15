@@ -10,13 +10,68 @@ env:
   VERSION_FILE_PATH: './pressable-basic-authentication.php'
 
 jobs:
+  # A separate job from the release below, rather than steps inside it, so the
+  # checks can fan out across the supported PHP range while the release itself
+  # still happens exactly once. Putting the matrix on the release job would run
+  # `git archive` and the publish step once per PHP version, racing to create the
+  # same tag.
+  #
+  # The same span as test.yml, deliberately: a version good enough to block a pull
+  # request is good enough to block a release, and gating the release on a
+  # narrower range would let a break on the untested version ship precisely
+  # because nothing stopped it.
+  check:
+    name: Lint and hook registration (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared in readme.txt, and a current release. The runner's
+        # ambient PHP is whatever the image ships and tracks neither.
+        php: [ '8.1', '8.4' ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # This job lints and executes repository PHP, so the GITHUB_TOKEN must
+          # not be left in the local git config where that code could read it.
+          persist-credentials: false
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Report PHP version
+        run: php -v
+
+      - name: Lint PHP files
+        run: find . -path ./vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 -- php -l
+
+      - name: Hook registration regression test
+        run: php tests/hook-registration-test.php
+
   build:
     name: Package Release Project
     runs-on: ubuntu-latest
 
+    # Every matrix leg must pass before anything is published. Two separate
+    # workflow files have no ordering between them, so test.yml alone could never
+    # stop a broken commit from shipping a Release -- within one workflow, this
+    # does.
+    needs: check
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          # This job runs `git archive` (a local ref) and the release script,
+          # which uses its own explicit GITHUB_TOKEN -- so the checkout token is
+          # not needed after checkout and must not be left in the git config.
+          persist-credentials: false
 
       - name: Install Ruby
         uses: ruby/setup-ruby@v1

@@ -8,7 +8,7 @@
 /*
 Plugin Name: Hosting Basic Authentication
 Description: Forces all users to authenticate using Basic Authentication before accessing any page.
-Version: 1.0.4
+Version: 1.0.5
 License: GPL2
 Text Domain: hosting-basic-authentication
 */
@@ -30,6 +30,30 @@ class Pressable_Basic_Auth {
 		// Hook into WordPress before anything is outputted.
 		add_action( 'plugins_loaded', array( $this, 'init' ), 1 );
 
+		// Logout is handled on `init`, deliberately later than the rest of `init()`.
+		// wp_logout() fires the `wp_logout` action, and its subscribers may rely on
+		// constants their own plugin defines in a `plugins_loaded` callback. Firing it
+		// from `plugins_loaded` priority 1 races that setup, and which plugin wins the
+		// race depends on load order -- `active_plugins` ordering, anything filtering
+		// it, and network-activated plugins, which load earlier still. User Switching
+		// defines its cookie constants that way, so wherever this plugin happens to run
+		// first, User Switching's `wp_logout` subscriber fatals on a constant it has
+		// not defined yet. Hooking to `init` drops the dependency on load order
+		// entirely: every `plugins_loaded` callback has completed by then.
+		//
+		// The cost of running this late is that output may already have been sent:
+		// anything echoed while plugins load -- a `_doing_it_wrong()` notice under
+		// WP_DEBUG display, a stray BOM -- makes the 401 header and the cookie
+		// clearing below fail, leaving a 200 with no challenge. wp_logout() itself
+		// still runs, so the session is destroyed server-side; what is lost is the
+		// browser-visible half. `plugins_loaded` at PHP_INT_MAX was measured as an
+		// alternative and degrades identically, because the output is emitted during
+		// that same hook. The two requirements are in tension: running after every
+		// `plugins_loaded` callback necessarily means running after any of them may
+		// have printed, and priority 1 -- the only position that avoids output -- is
+		// the position that causes the race above.
+		add_action( 'init', array( $this, 'handle_logout_request' ), 1 );
+
 		// Add filter for logout URL.
 		add_filter( 'logout_url', array( $this, 'modify_logout_url' ), 10, 2 );
 
@@ -41,29 +65,8 @@ class Pressable_Basic_Auth {
 	 * Initialize the plugin
 	 */
 	public function init() {
-		// Skip if we're doing AJAX.
-		if ( $this->is_ajax_request() ) {
+		if ( $this->skip_request() ) {
 			return;
-		}
-
-		// Skip if we're doing CRON.
-		if ( $this->is_cron_request() ) {
-			return;
-		}
-
-		// Skip if we're in CLI mode.
-		if ( $this->is_cli_request() ) {
-			return;
-		}
-
-		// Skip requests to excluded endpoints
-        if ($this->should_skip_auth()) {
-            return;
-        }
-
-		// Handle logout request.
-		if ( isset( $_GET['basic-auth-logout'] ) ) {
-			$this->handle_basic_auth_logout();
 		}
 
 		// Redirect from wp-login.php when already authenticated via Basic Auth
@@ -71,6 +74,36 @@ class Pressable_Basic_Auth {
 
 		// Force authentication.
 		$this->force_basic_authentication();
+	}
+
+	/**
+	 * Handles the Basic Auth logout request.
+	 *
+	 * Hooked to `init` rather than running with the rest of init() on
+	 * `plugins_loaded` -- see the hook registration in the constructor for why.
+	 */
+	public function handle_logout_request() {
+		if ( $this->skip_request() ) {
+			return;
+		}
+
+		if ( ! isset( $_GET['basic-auth-logout'] ) ) {
+			return;
+		}
+
+		$this->handle_basic_auth_logout();
+	}
+
+	/**
+	 * Whether this request is outside the scope of Basic Authentication.
+	 *
+	 * @return bool
+	 */
+	private function skip_request() {
+		return $this->is_ajax_request()
+			|| $this->is_cron_request()
+			|| $this->is_cli_request()
+			|| $this->should_skip_auth();
 	}
 
 	/**
@@ -109,6 +142,27 @@ class Pressable_Basic_Auth {
 			$this->send_auth_headers();
 		}
 
+		// A request asking to log out must still clear the authentication gate above --
+		// that is what keeps an anonymous caller from reaching wp_logout() -- but it must
+		// not be given a session that handle_logout_request() discards moments later on
+		// `init`. Establishing one fires set_auth_cookie and set_logged_in_cookie on what
+		// is only ever a logout, which an audit or session-tracking plugin can reasonably
+		// record as a real login.
+		//
+		// Skipping wp_set_current_user() as well as the cookies is correct, not a
+		// shortcut: execution only reaches here when nobody is logged in -- a live session
+		// returns above -- so there is no established identity for the following
+		// wp_logout() to report. It passes whatever get_current_user_id() actually holds,
+		// which is 0, instead of one this method manufactured moments earlier purely to
+		// tear it down again.
+		//
+		// Placement is load-bearing in both directions. Above the credential handling this
+		// would skip the 401 as well, readmitting the unauthenticated caller it exists to
+		// exclude; below the cookie calls it would do nothing at all.
+		if ( isset( $_GET['basic-auth-logout'] ) ) {
+			return;
+		}
+
 		// Log the user in programmatically.
 		wp_set_current_user( $user->ID );
 		wp_set_auth_cookie( $user->ID );
@@ -135,9 +189,10 @@ class Pressable_Basic_Auth {
      * @return bool
      */
     private function should_skip_auth() {
-        // List of endpoints to exclude from Basic Auth
+        // REST rewrite targets only. xmlrpc.php is deliberately NOT in this list --
+        // it is matched on SCRIPT_NAME below, which is authoritative in a way a
+        // requested path is not.
         $excluded_endpoints = array(
-            'xmlrpc.php',
             'wp-json/jetpack',
             'wp-json/wp/v2',
             'wp-json/wp/v3'
@@ -147,25 +202,107 @@ class Pressable_Basic_Auth {
         $request_uri = $_SERVER['REQUEST_URI'] ?? '';
         $script_name = $_SERVER['SCRIPT_NAME'] ?? '';
 
-        // Check if this is a direct xmlrpc.php request
+        // SCRIPT_NAME is the script the server actually resolved, so this holds
+        // however the caller spelled the request.
         if (basename($script_name) === 'xmlrpc.php') {
             return true;
         }
 
-        // Check all excluded endpoints
-        foreach ($excluded_endpoints as $endpoint) {
-            if (strpos($request_uri, $endpoint) !== false) {
-                return true;
+        // Everything below matches the REQUESTED path, which is not necessarily
+        // what the server serves. Three spellings made a gated page look like an
+        // excluded endpoint, each waiving authentication entirely and allowing a
+        // full WordPress sign-in with no credentials:
+        //
+        //   /?x=wp-json/wp/v2             query string read as part of the path
+        //   /xmlrpc.php/../wp-login.php   `..` resolved by the server afterwards
+        //   /wp-login.php/wp-json/wp/v2/  trailing segments land in PATH_INFO
+        //
+        // The guards below are written against the general fault rather than those
+        // three shapes: the endpoints above are rewrite targets, so they only mean
+        // anything when the server routes the request to index.php. Decoded first,
+        // because the server decodes before it resolves.
+        // The query and fragment are cut by hand rather than with parse_url(), which
+        // reads a target beginning `//` as a protocol-relative URL and discards the
+        // first segment as an authority. `//wp-login.php/wp-json/wp/v2/` parsed to
+        // `/wp-json/wp/v2/` -- the script vanished, leaving nothing before the
+        // endpoint to object to -- while the server preserved the target, executed
+        // wp-login.php and passed the rest as PATH_INFO. That served the login form
+        // and allowed a full WordPress sign-in with no Basic Auth at all. Collapsing
+        // the leading slashes afterwards is what makes the resulting path comparable.
+        $cut          = strcspn($request_uri, '?#');
+        $request_path = rawurldecode('/' . ltrim(substr($request_uri, 0, $cut), '/'));
+        $haystack     = rtrim($request_path, '/') . '/';
+
+        // A `.` or `..` segment means the path resolves to something other than what
+        // it reads as, so nothing in it can be trusted to name a destination.
+        $has_traversal = false;
+
+        foreach (explode('/', $haystack) as $segment) {
+            if ('.' === $segment || '..' === $segment) {
+                $has_traversal = true;
+                break;
             }
         }
 
-        // Check WordPress constants
+        // Check all excluded endpoints. Anchored on a slash at both ends so a needle
+        // matches whole path segments -- `/notwp-json/wp/v2` must not satisfy
+        // `wp-json/wp/v2` -- but not anchored at the start of the path, because a
+        // subdirectory or multisite subsite install serves these below a prefix.
+        if (!$has_traversal) {
+            foreach ($excluded_endpoints as $endpoint) {
+                $position = strpos($haystack, '/' . trim($endpoint, '/') . '/');
+
+                if (false !== $position && !$this->path_runs_another_script(substr($haystack, 0, $position))) {
+                    return true;
+                }
+            }
+        }
+
+        // Check WordPress constants. xmlrpc.php and the REST bootstrap define these
+        // themselves, so they are evidence from the request's own execution rather
+        // than from how it was spelled.
         if (defined('XMLRPC_REQUEST') && XMLRPC_REQUEST) {
             return true;
         }
 
         if (defined('REST_REQUEST') && REST_REQUEST) {
             return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a path prefix names a script the server would execute.
+     *
+     * Only what sits BEFORE an excluded endpoint is asked about. A `.php` segment
+     * there means the server runs that script and hands the endpoint to it as
+     * PATH_INFO, so the endpoint is decoration on a gated page:
+     * `/wp-login.php/wp-json/wp/v2/` served the login form and allowed a full
+     * WordPress sign-in with no Basic Auth at all.
+     *
+     * A `.php` segment AFTER the endpoint is part of the REST route itself --
+     * `/wp-json/wp/v2/custom-route.php` is routed to index.php and dispatched to
+     * the REST API -- so an earlier version of this check, which scanned the whole
+     * path, wrongly demanded authentication for a valid REST request.
+     *
+     * Known limitation, accepted deliberately: a WordPress install inside a
+     * DIRECTORY named `*.php` has a prefix that reads like a script but is not one,
+     * so REST under it is challenged rather than excluded. Separating the two needs
+     * either the absence of PATH_INFO as evidence -- trusting a variable's absence,
+     * which turns this fail-closed edge case into a fail-open one wherever the SAPI
+     * does not populate it -- or a filesystem lookup that a subdirectory install
+     * defeats anyway. Refusing a REST request under a pathologically named directory
+     * is the cheaper error of the two.
+     *
+     * @param string $prefix The portion of the request path preceding the endpoint.
+     * @return bool
+     */
+    private function path_runs_another_script($prefix) {
+        foreach (explode('/', $prefix) as $segment) {
+            if ('.php' === strtolower(substr($segment, -4))) {
+                return true;
+            }
         }
 
         return false;
@@ -270,6 +407,15 @@ class Pressable_Basic_Auth {
 	public function maybe_redirect_from_login_page() {
 		global $pagenow;
 
+		// A request that asks to log out is never redirected away from the logout. This
+		// guard only matters on wp-login.php, and only for a logout URL that omits
+		// `action=logout` -- the URL modify_logout_url() builds always carries it. Since
+		// the logout moved to `init`, this method now runs first, and without the guard
+		// such a request would redirect to the home page still logged in, with no error.
+		if ( isset( $_GET['basic-auth-logout'] ) ) {
+			return;
+		}
+
 		// Check if we're on the login page and have Basic Auth credentials
 		if ( 'wp-login.php' === $pagenow &&
 		     ! empty( $_SERVER['PHP_AUTH_USER'] ) &&
@@ -311,11 +457,22 @@ class Pressable_Basic_Auth {
 	/**
 	 * Check if the current request is an AJAX request
 	 *
+	 * Matched only on the `DOING_AJAX` constant, which WordPress defines itself
+	 * when `admin-ajax.php` runs -- evidence from the request's own execution that
+	 * a caller cannot forge. The `X-Requested-With: XMLHttpRequest` request header
+	 * was deliberately removed: it is set by the caller, so keying an auth waiver
+	 * on it let any anonymous request turn Basic Auth off on any URL,
+	 * `wp-login.php` included, by sending one header -- the same full bypass the
+	 * `should_skip_auth()` rewrite closes for path spellings, reached with a
+	 * header instead. It covered nothing the constant does not: real WordPress
+	 * AJAX runs through admin-ajax.php with `DOING_AJAX` set, and the REST API is
+	 * handled separately by `should_skip_auth()`. A custom endpoint that needs
+	 * access sends Basic Auth like anything else.
+	 *
 	 * @return bool
 	 */
 	private function is_ajax_request() {
-		return ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ||
-		       ( ! empty( $_SERVER['HTTP_X_REQUESTED_WITH'] ) && 'xmlhttprequest' === strtolower( $_SERVER['HTTP_X_REQUESTED_WITH'] ) );
+		return defined( 'DOING_AJAX' ) && DOING_AJAX;
 	}
 
 	/**
