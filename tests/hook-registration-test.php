@@ -225,8 +225,26 @@ foreach ( array(
 	array( '/index.php/wp-json/wp/v2/', '/index.php' ),
 	array( '/wp-login.PHP/wp-json/wp/v2/', '/wp-login.PHP' ),
 	array( '/sub1/wp-login.php/wp-json/wp/v2/', '/wp-login.php' ),
+	array( '/index.php/wp-json/wp/v2/', '/index.php' ),
+	array( '/index.PHP/wp-json/wp/v2/', '/index.php' ),
+	array( '/index.php/hello-world/wp-json/wp/v2/', '/index.php' ),
 ) as $case ) {
 	check( false === skips_auth_for( $case[0], $case[1] ), "a PATH_INFO endpoint after a script does not waive auth: {$case[0]}" );
+}
+
+// The endpoint must not be preceded by a script the server would execute -- but a
+// `.php` segment AFTER it is part of the REST route and must still be excluded.
+// Scanning the whole path for `.php` instead, as an earlier fix did, wrongly
+// demanded authentication for a valid REST request (caught by the Codex pre-PR
+// review, verified against a live install: WordPress dispatches
+// /wp-json/wp/v2/custom-route.php to the REST API and returns rest_no_route).
+foreach ( array(
+	'/wp-json/wp/v2/custom-route.php',
+	'/wp-json/wp/v2/media/thing.php',
+	'/wp-json/jetpack/v4/x.php',
+	'/wp-json/wp/v3/anything.php',
+) as $uri ) {
+	check( true === skips_auth_for( $uri ), "a .php segment INSIDE a REST route still waives auth: $uri" );
 }
 
 // A path carrying a traversal segment is not the path the server ends up serving,

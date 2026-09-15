@@ -52,8 +52,8 @@ No manual installation is necessary.​
   (`/xmlrpc.php/../wp-login.php`), or by trailing one after it
   (`/wp-login.php/wp-json/wp/v2/`). All three served the login form and allowed a
   full WordPress sign-in. xmlrpc.php is now matched on the script the server
-  actually resolved, and the REST endpoints only on a decoded request path that
-  the server routes to index.php.
+  actually resolved, and a REST endpoint only when nothing preceding it in the
+  request path names a script the server would execute instead.
 * Fixed: logging out on a site also running User Switching caused a fatal error.
 * Fixed: a logout request no longer reaches wp_logout() without valid credentials.
 * Fixed: a logout URL without action=logout is no longer redirected away from the

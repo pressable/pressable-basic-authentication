@@ -217,24 +217,20 @@ class Pressable_Basic_Auth {
         //   /xmlrpc.php/../wp-login.php   `..` resolved by the server afterwards
         //   /wp-login.php/wp-json/wp/v2/  trailing segments land in PATH_INFO
         //
-        // The guard below is written against the general fault rather than those
+        // The guards below are written against the general fault rather than those
         // three shapes: the endpoints above are rewrite targets, so they only mean
         // anything when the server routes the request to index.php. Decoded first,
         // because the server decodes before it resolves.
         $request_path = rawurldecode('/' . ltrim((string) parse_url($request_uri, PHP_URL_PATH), '/'));
         $haystack     = rtrim($request_path, '/') . '/';
 
-        // A `.php` segment means the server is executing that script and handing
-        // the rest to it as PATH_INFO; a `.` or `..` segment means the path is
-        // resolved to something other than what it reads as. In neither case is the
-        // request routed to index.php, so an endpoint appearing in it is decoration,
-        // not a destination -- refuse rather than re-implement the server's own
-        // path resolution here.
-        $serves_another_script = false;
+        // A `.` or `..` segment means the path resolves to something other than what
+        // it reads as, so nothing in it can be trusted to name a destination.
+        $has_traversal = false;
 
         foreach (explode('/', $haystack) as $segment) {
-            if ('.' === $segment || '..' === $segment || '.php' === strtolower(substr($segment, -4))) {
-                $serves_another_script = true;
+            if ('.' === $segment || '..' === $segment) {
+                $has_traversal = true;
                 break;
             }
         }
@@ -243,9 +239,11 @@ class Pressable_Basic_Auth {
         // matches whole path segments -- `/notwp-json/wp/v2` must not satisfy
         // `wp-json/wp/v2` -- but not anchored at the start of the path, because a
         // subdirectory or multisite subsite install serves these below a prefix.
-        if (!$serves_another_script) {
+        if (!$has_traversal) {
             foreach ($excluded_endpoints as $endpoint) {
-                if (strpos($haystack, '/' . trim($endpoint, '/') . '/') !== false) {
+                $position = strpos($haystack, '/' . trim($endpoint, '/') . '/');
+
+                if (false !== $position && !$this->path_runs_another_script(substr($haystack, 0, $position))) {
                     return true;
                 }
             }
@@ -260,6 +258,33 @@ class Pressable_Basic_Auth {
 
         if (defined('REST_REQUEST') && REST_REQUEST) {
             return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a path prefix names a script the server would execute.
+     *
+     * Only what sits BEFORE an excluded endpoint is asked about. A `.php` segment
+     * there means the server runs that script and hands the endpoint to it as
+     * PATH_INFO, so the endpoint is decoration on a gated page:
+     * `/wp-login.php/wp-json/wp/v2/` served the login form and allowed a full
+     * WordPress sign-in with no Basic Auth at all.
+     *
+     * A `.php` segment AFTER the endpoint is part of the REST route itself --
+     * `/wp-json/wp/v2/custom-route.php` is routed to index.php and dispatched to
+     * the REST API -- so an earlier version of this check, which scanned the whole
+     * path, wrongly demanded authentication for a valid REST request.
+     *
+     * @param string $prefix The portion of the request path preceding the endpoint.
+     * @return bool
+     */
+    private function path_runs_another_script($prefix) {
+        foreach (explode('/', $prefix) as $segment) {
+            if ('.php' === strtolower(substr($segment, -4))) {
+                return true;
+            }
         }
 
         return false;
