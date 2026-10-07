@@ -428,7 +428,8 @@ foreach ( array(
 	'a token that is not base64'     => array( 'token' => '!!!not*base64!!!' ),
 	'a token with too few parts'     => array( 'token' => rtrim( strtr( base64_encode( '7-' . ONEPRESS_SECRET . '-1755013' ), '+/', '-_' ), '=' ) ),
 	'a token with extra parts'       => array( 'token' => mpcp_token( 7, '-x' ) ),
-	'a non-numeric user id'          => array( 'token' => mpcp_token( 'admin' ), 'user_id' => 'admin' ),
+	// (int) '7abc' is 7, so this reaches user 7's real token unless the id is rejected first.
+	'a non-numeric user id'          => array( 'token' => mpcp_token( '7abc' ) ),
 ) as $description => $request ) {
 	check( false === skips_auth_for_onepress( $request ), "a one-click request with $description does not waive auth" );
 }

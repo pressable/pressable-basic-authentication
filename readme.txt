@@ -4,7 +4,7 @@ Tags: pressable, basic auth, authentication, security
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.0.5
+Stable tag: 1.0.6
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -43,6 +43,14 @@ No manual installation is necessary.​
 * Initial release​
 
 == Changelog ==
+
+= 1.0.6 =
+* Fixed: the WP Admin button in MyPressable (Pressable OnePress Login) ended in a
+  Basic Authentication prompt instead of signing the user in. A one-click login
+  request now passes Basic Authentication only when it carries a token the
+  OnePress plugin will accept -- present, unexpired, issued to the same browser,
+  and matching the stored secret -- and only while that plugin is active. Any
+  other request to wp-login.php is still challenged.
 
 = 1.0.5 =
 * Fixed: Basic Authentication could be bypassed entirely on any URL, with no
