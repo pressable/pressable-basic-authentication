@@ -38,6 +38,18 @@ function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
 	$GLOBALS['hooks'][] = array( 'hook' => $hook, 'callback' => $callback, 'priority' => $priority );
 }
 
+$GLOBALS['user_meta']         = array();
+$GLOBALS['deleted_user_meta'] = array();
+
+function get_user_meta( $user_id, $key = '', $single = false ) {
+	return $GLOBALS['user_meta'][ $user_id ][ $key ] ?? '';
+}
+
+function delete_user_meta( $user_id, $meta_key, $meta_value = '' ) {
+	$GLOBALS['deleted_user_meta'][] = array( $user_id, $meta_key );
+	return true;
+}
+
 require __DIR__ . '/../pressable-basic-authentication.php';
 
 $failures = array();
@@ -307,6 +319,119 @@ foreach ( array(
 }
 
 check( false === skips_auth_for( '/' ), 'an ordinary request is still gated' );
+
+const ONEPRESS_UA     = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
+const ONEPRESS_SECRET = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+
+/**
+ * Builds an mpcp_token the way MPCP's UpdateMpcpAuthToken does: URL-safe base64,
+ * unpadded, of "<wp_user_id>-<secret>-<site_id>-<md5(user agent)>".
+ *
+ * @param int|string $user_id WordPress user id segment.
+ * @param string     $suffix  Appended to the payload, to build malformed tokens.
+ * @return string
+ */
+function mpcp_token( $user_id = 7, $suffix = '' ) {
+	$payload = $user_id . '-' . ONEPRESS_SECRET . '-1755013-' . md5( ONEPRESS_UA ) . $suffix;
+
+	return rtrim( strtr( base64_encode( $payload ), '+/', '-_' ), '=' );
+}
+
+/**
+ * Whether should_skip_auth() waives Basic Authentication for a OnePress one-click
+ * login request, with every input the check reads set for the duration of the call.
+ *
+ * @param array $request Overrides for: token (null for absent), user_id (whose meta
+ *                       is stored), meta (the stored mpcp_auth_token), user_agent,
+ *                       pagenow.
+ * @return bool
+ */
+function skips_auth_for_onepress( array $request = array() ) {
+	static $plugin = null;
+
+	if ( null === $plugin ) {
+		$plugin = new Pressable_Basic_Auth();
+	}
+
+	$request += array(
+		'token'      => mpcp_token(),
+		'user_id'    => 7,
+		'meta'       => array( 'value' => md5( ONEPRESS_SECRET ), 'exp' => time() + 30 ),
+		'user_agent' => ONEPRESS_UA,
+		'pagenow'    => 'wp-login.php',
+	);
+
+	$original_server  = $_SERVER;
+	$original_get     = $_GET;
+	$original_pagenow = $GLOBALS['pagenow'] ?? null;
+
+	$_SERVER['REQUEST_URI']     = '/wp-login.php';
+	$_SERVER['SCRIPT_NAME']     = '/wp-login.php';
+	$_SERVER['HTTP_USER_AGENT'] = $request['user_agent'];
+	$_GET                       = null === $request['token'] ? array() : array( 'mpcp_token' => $request['token'] );
+	$GLOBALS['pagenow']         = $request['pagenow'];
+	$GLOBALS['user_meta']       = array( $request['user_id'] => array( 'mpcp_auth_token' => $request['meta'] ) );
+
+	try {
+		$method = new ReflectionMethod( 'Pressable_Basic_Auth', 'should_skip_auth' );
+		$method->setAccessible( true );
+
+		return (bool) $method->invoke( $plugin );
+	} finally {
+		$_SERVER              = $original_server;
+		$_GET                 = $original_get;
+		$GLOBALS['pagenow']   = $original_pagenow;
+		$GLOBALS['user_meta'] = array();
+	}
+}
+
+// Without OnePress loaded nothing would consume the token, so waiving the challenge
+// would only expose the wp-login.php password form with no Basic Auth in front of it.
+// Asserted before the stand-in class below is declared, which cannot be undone.
+check( false === skips_auth_for_onepress(), 'a valid one-click token does not waive auth when OnePress is not active' );
+
+if ( ! class_exists( 'Pressable_OnePress_Login_Plugin' ) ) {
+	final class Pressable_OnePress_Login_Plugin {}
+}
+
+// The MPCP WP Admin button redirects to wp-login.php?mpcp_token=…, which OnePress
+// validates on `plugins_loaded` priority 10 -- after this plugin's priority-1 challenge
+// has already ended the request. A valid token must therefore get through here.
+check( true === skips_auth_for_onepress(), 'a valid, unexpired one-click token on wp-login.php waives auth' );
+
+// MPCP omits base64 padding. User id 7 gives a payload needing one `=`; 77 needs none.
+check(
+	true === skips_auth_for_onepress( array( 'token' => mpcp_token( 77 ), 'user_id' => 77 ) ),
+	'a one-click token whose encoding has no padding to omit also waives auth'
+);
+
+$GLOBALS['deleted_user_meta'] = array();
+skips_auth_for_onepress();
+check(
+	array() === $GLOBALS['deleted_user_meta'],
+	'validating the token does not consume it -- OnePress deletes it when it logs the user in'
+);
+
+foreach ( array(
+	'no token'                       => array( 'token' => null ),
+	'an empty token'                 => array( 'token' => '' ),
+	'a token passed as an array'     => array( 'token' => array( mpcp_token() ) ),
+	'a page other than wp-login.php' => array( 'pagenow' => 'index.php' ),
+	'an expired token'               => array( 'meta' => array( 'value' => md5( ONEPRESS_SECRET ), 'exp' => time() - 1 ) ),
+	'a wrong secret'                 => array( 'meta' => array( 'value' => md5( 'other' ), 'exp' => time() + 30 ) ),
+	'a different user agent'         => array( 'user_agent' => 'curl/8.4.0' ),
+	'no stored token'                => array( 'meta' => '' ),
+	'a stored token missing exp'     => array( 'meta' => array( 'value' => md5( ONEPRESS_SECRET ) ) ),
+	'a stored token missing value'   => array( 'meta' => array( 'exp' => time() + 30 ) ),
+	'a non-array stored token'       => array( 'meta' => md5( ONEPRESS_SECRET ) ),
+	'a token for another user'       => array( 'user_id' => 8 ),
+	'a token that is not base64'     => array( 'token' => '!!!not*base64!!!' ),
+	'a token with too few parts'     => array( 'token' => rtrim( strtr( base64_encode( '7-' . ONEPRESS_SECRET . '-1755013' ), '+/', '-_' ), '=' ) ),
+	'a token with extra parts'       => array( 'token' => mpcp_token( 7, '-x' ) ),
+	'a non-numeric user id'          => array( 'token' => mpcp_token( 'admin' ), 'user_id' => 'admin' ),
+) as $description => $request ) {
+	check( false === skips_auth_for_onepress( $request ), "a one-click request with $description does not waive auth" );
+}
 
 // is_ajax_request() is tested directly rather than through skip_request(): this file runs
 // under the CLI SAPI, so is_cli_request() (a sibling arm of skip_request()) is always true
