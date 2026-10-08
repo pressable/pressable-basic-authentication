@@ -64,6 +64,15 @@ function wp_installing() {
 	return ! empty( $GLOBALS['wp_installing'] );
 }
 
+// Filterable in WordPress, so either can be true without DOING_AJAX / DOING_CRON.
+function wp_doing_ajax() {
+	return ! empty( $GLOBALS['wp_doing_ajax'] );
+}
+
+function wp_doing_cron() {
+	return ! empty( $GLOBALS['wp_doing_cron'] );
+}
+
 require __DIR__ . '/../pressable-basic-authentication.php';
 
 $failures = array();
@@ -357,7 +366,8 @@ function mpcp_token( $user_id = 7, $suffix = '' ) {
  *
  * @param array $request Overrides for: token (null for absent), user_id (whose meta
  *                       is stored), meta (the stored mpcp_auth_token), user_agent,
- *                       pagenow, installing (wp_installing()).
+ *                       pagenow, installing, doing_ajax, doing_cron (the wp_*()
+ *                       results).
  * @return bool
  */
 function skips_auth_for_onepress( array $request = array() ) {
@@ -374,9 +384,13 @@ function skips_auth_for_onepress( array $request = array() ) {
 		'user_agent' => ONEPRESS_UA,
 		'pagenow'    => 'wp-login.php',
 		'installing' => false,
+		'doing_ajax' => false,
+		'doing_cron' => false,
 	);
 
 	$GLOBALS['wp_installing'] = $request['installing'];
+	$GLOBALS['wp_doing_ajax'] = $request['doing_ajax'];
+	$GLOBALS['wp_doing_cron'] = $request['doing_cron'];
 
 	$original_server  = $_SERVER;
 	$original_get     = $_GET;
@@ -400,6 +414,8 @@ function skips_auth_for_onepress( array $request = array() ) {
 		$GLOBALS['pagenow']       = $original_pagenow;
 		$GLOBALS['user_meta']     = array();
 		$GLOBALS['wp_installing'] = false;
+		$GLOBALS['wp_doing_ajax'] = false;
+		$GLOBALS['wp_doing_cron'] = false;
 	}
 }
 
@@ -454,6 +470,10 @@ foreach ( array(
 	'a non-string user agent'        => array( 'user_agent' => array( ONEPRESS_UA ) ),
 	// OnePress registers no login handler while WordPress is installing.
 	'WordPress installing'           => array( 'installing' => true ),
+	// wp_doing_ajax() and wp_doing_cron() are filterable, so either can stand OnePress
+	// down while the DOING_* constants skip_request() checks are still unset.
+	'wp_doing_ajax() filtered true'  => array( 'doing_ajax' => true ),
+	'wp_doing_cron() filtered true'  => array( 'doing_cron' => true ),
 ) as $description => $request ) {
 	check( false === skips_auth_for_onepress( $request ), "a one-click request with $description does not waive auth" );
 }
@@ -511,6 +531,10 @@ check( false === is_ajax_for( null ), 'a plain request with no such header is no
 // caller cannot forge. Asserted last, because define() is process-global and irreversible.
 define( 'DOING_AJAX', true );
 check( true === is_ajax_for( null ), 'a genuine DOING_AJAX request is still AJAX (bypasses)' );
+
+// OnePress registers no login handler under WP-CLI. Asserted last for the same reason.
+define( 'WP_CLI', true );
+check( false === skips_auth_for_onepress(), 'a one-click request under WP-CLI does not waive auth' );
 
 check(
 	array() === $GLOBALS['php_errors'],
