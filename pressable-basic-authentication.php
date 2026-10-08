@@ -290,8 +290,11 @@ class Pressable_Basic_Auth {
 	 * read-only: OnePress deletes the stored token as it consumes it, which keeps the
 	 * token single-use, so a replayed URL fails here and is challenged as usual.
 	 *
-	 * OnePress must be loaded, or nothing would consume the token and the waiver
-	 * would only expose the password form. Every active plugin file is included before
+	 * OnePress must also be ready to handle the request, or nothing would consume the
+	 * token and the waiver would only expose the password form: loaded, and not
+	 * stood down by its own readiness guard. That guard also refuses cron, AJAX and
+	 * WP-CLI, which skip_request() has already let through before this runs, so only
+	 * wp_installing() is repeated here. Every active plugin file is included before
 	 * `plugins_loaded` fires, so the class check does not depend on load order.
 	 *
 	 * `$_GET` and `$_SERVER` are read raw on purpose: wp_magic_quotes() only runs after
@@ -301,7 +304,7 @@ class Pressable_Basic_Auth {
 	 * @return bool
 	 */
 	private function is_valid_onepress_login_request() {
-		if ( ! class_exists( 'Pressable_OnePress_Login_Plugin', false ) ) {
+		if ( ! class_exists( 'Pressable_OnePress_Login_Plugin', false ) || wp_installing() ) {
 			return false;
 		}
 
@@ -311,7 +314,9 @@ class Pressable_Basic_Auth {
 
 		$encoded = $_GET['mpcp_token'] ?? null;
 
-		if ( ! is_string( $encoded ) || '' === $encoded ) {
+		// A genuine token encodes about 120 bytes to about 160 characters. The cap bounds
+		// the decoding and splitting below, which run before any authentication.
+		if ( ! is_string( $encoded ) || '' === $encoded || strlen( $encoded ) > 256 ) {
 			return false;
 		}
 
@@ -344,9 +349,9 @@ class Pressable_Basic_Auth {
 			return false;
 		}
 
-		$user_agent = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+		$user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
 
-		if ( ! hash_equals( md5( $user_agent ), $user_agent_hash ) ) {
+		if ( ! is_string( $user_agent ) || ! hash_equals( md5( $user_agent ), $user_agent_hash ) ) {
 			return false;
 		}
 
