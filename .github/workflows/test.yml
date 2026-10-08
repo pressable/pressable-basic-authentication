@@ -45,3 +45,6 @@ jobs:
 
       - name: Hook registration regression test
         run: php tests/hook-registration-test.php
+
+      - name: OnePress waiver dispatch test
+        run: php tests/onepress-dispatch-test.php
