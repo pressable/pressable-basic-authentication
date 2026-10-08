@@ -370,7 +370,8 @@ function mpcp_token( $user_id = 7, $suffix = '' ) {
  * @param array $request Overrides for: token (null for absent), user_id (whose meta
  *                       is stored), meta (the stored mpcp_auth_token), user_agent,
  *                       pagenow, installing, doing_ajax, doing_cron (the wp_*()
- *                       results).
+ *                       results), request_token ($_REQUEST's mpcp_token, null for
+ *                       absent; defaults to the $_GET token, as request_order GP gives).
  * @return bool
  */
 function skips_auth_for_onepress( array $request = array() ) {
@@ -391,18 +392,24 @@ function skips_auth_for_onepress( array $request = array() ) {
 		'doing_cron' => false,
 	);
 
+	if ( ! array_key_exists( 'request_token', $request ) ) {
+		$request['request_token'] = $request['token'];
+	}
+
 	$GLOBALS['wp_installing'] = $request['installing'];
 	$GLOBALS['wp_doing_ajax'] = $request['doing_ajax'];
 	$GLOBALS['wp_doing_cron'] = $request['doing_cron'];
 
 	$original_server  = $_SERVER;
 	$original_get     = $_GET;
+	$original_request = $_REQUEST;
 	$original_pagenow = $GLOBALS['pagenow'] ?? null;
 
 	$_SERVER['REQUEST_URI']     = '/wp-login.php';
 	$_SERVER['SCRIPT_NAME']     = '/wp-login.php';
 	$_SERVER['HTTP_USER_AGENT'] = $request['user_agent'];
 	$_GET                       = null === $request['token'] ? array() : array( 'mpcp_token' => $request['token'] );
+	$_REQUEST                   = null === $request['request_token'] ? array() : array( 'mpcp_token' => $request['request_token'] );
 	$GLOBALS['pagenow']         = $request['pagenow'];
 	$GLOBALS['user_meta']       = array( $request['user_id'] => array( 'mpcp_auth_token' => $request['meta'] ) );
 
@@ -414,6 +421,7 @@ function skips_auth_for_onepress( array $request = array() ) {
 	} finally {
 		$_SERVER              = $original_server;
 		$_GET                 = $original_get;
+		$_REQUEST             = $original_request;
 		$GLOBALS['pagenow']       = $original_pagenow;
 		$GLOBALS['user_meta']     = array();
 		$GLOBALS['wp_installing'] = false;
@@ -473,6 +481,10 @@ foreach ( array(
 	'a non-string user agent'        => array( 'user_agent' => array( ONEPRESS_UA ) ),
 	// OnePress registers no login handler while WordPress is installing.
 	'WordPress installing'           => array( 'installing' => true ),
+	// OnePress registers on, and reads, $_REQUEST. With a request_order that leaves out
+	// G it never sees a query-string token, and a body value can differ from the query one.
+	'the token absent from $_REQUEST' => array( 'request_token' => null ),
+	'a different $_REQUEST token'     => array( 'request_token' => mpcp_token( 8 ) ),
 	// wp_doing_ajax() and wp_doing_cron() are filterable, so either can stand OnePress
 	// down while the DOING_* constants skip_request() checks are still unset.
 	'wp_doing_ajax() filtered true'  => array( 'doing_ajax' => true ),
