@@ -1,8 +1,8 @@
 <?php
 /**
  * Regression tests for the Basic Auth plugin's hook wiring and its authentication
- * waivers: the User Switching logout conflict, the excluded-endpoint matching, the
- * AJAX check, and the OnePress one-click login waiver.
+ * waivers: the User Switching logout conflict, the logout guard's placement, the
+ * excluded-endpoint matching, the AJAX check, and the OnePress one-click login waiver.
  *
  * wp_logout() fires the `wp_logout` action, whose subscribers may rely on constants
  * their own plugin defines in a `plugins_loaded` callback. Calling it from this
@@ -11,9 +11,9 @@
  * runs after every `plugins_loaded` callback has completed.
  *
  * Deliberately dependency-free: the repo has no composer/PHPUnit setup. Hook wiring
- * is read from recorded registrations, and request handling is exercised through the
- * private methods with stand-ins for the few WordPress functions they call, so it
- * needs neither WordPress nor a database. Run it with: php tests/hook-registration-test.php
+ * is read from recorded registrations and the methods' source, and request handling
+ * is exercised through the private methods with stand-ins for the few WordPress
+ * functions they call, so it needs neither WordPress nor a database. Run it with: php tests/hook-registration-test.php
  *
  * @package HostingBasicAuthentication
  */
@@ -199,9 +199,9 @@ check(
 /**
  * Whether should_skip_auth() would waive Basic Authentication for a request URI.
  *
- * Invoked for real rather than inspected as source: the method touches only
- * basename() and parse_url(), so it runs without WordPress, and a behavioural
- * assertion cannot be satisfied by a rewrite that merely looks different.
+ * Invoked for real rather than inspected as source: the method touches only PHP
+ * built-ins and the WordPress stand-ins above, so it runs without WordPress, and a
+ * behavioural assertion cannot be satisfied by a rewrite that merely looks different.
  *
  * @param string $uri         Value to place in REQUEST_URI.
  * @param string $script_name Value to place in SCRIPT_NAME -- the script the server

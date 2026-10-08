@@ -11,7 +11,7 @@ This plugin implements server-level Basic Authentication for your WordPress site
 - Sites that need an additional layer of security before the WordPress login
 
 Key features:
-- Forces Basic Authentication for all requests, except: WordPress AJAX, cron and WP-CLI; XML-RPC; the Jetpack, `wp/v2` and `wp/v3` REST namespaces; and a MyPressable WP Admin one-click login carrying a valid, unexpired Pressable OnePress Login token while that plugin is active
+- Forces Basic Authentication for all requests, except: WordPress AJAX, cron and WP-CLI; XML-RPC; the Jetpack, `wp/v2` and `wp/v3` REST namespaces requested under `/wp-json/`; a MyPressable WP Admin one-click login carrying a valid, unexpired Pressable OnePress Login token while that plugin is active; and any request from a user already logged in to WordPress
 - Integrates with WordPress user database for authentication
 - Handles logout functionality properly
 - Prevents caching of authentication requests
