@@ -17,6 +17,7 @@ The Pressable Basic Authentication plugin enforces HTTP Basic Authentication acr
 * Enforces HTTP Basic Authentication on all front-end and back-end pages.
 * Installed on sites to restrict public access.
 * Allows super administrators to bypass authentication for seamless management.
+* Lets the MyPressable WP Admin button sign in: a request carrying a valid, unexpired Pressable OnePress Login token passes, while that plugin is active.
 * Integrates with WordPress's authentication system for user verification.
 * Provides a mechanism to log out of Basic Authentication sessions.​
 

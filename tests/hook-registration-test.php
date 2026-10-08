@@ -1,6 +1,8 @@
 <?php
 /**
- * Regression test for the Basic Auth / User Switching logout conflict.
+ * Regression tests for the Basic Auth plugin's hook wiring and its authentication
+ * waivers: the User Switching logout conflict, the excluded-endpoint matching, the
+ * AJAX check, and the OnePress one-click login waiver.
  *
  * wp_logout() fires the `wp_logout` action, whose subscribers may rely on constants
  * their own plugin defines in a `plugins_loaded` callback. Calling it from this
@@ -8,9 +10,10 @@
  * the load order happens to fall. The logout must therefore stay on `init`, which
  * runs after every `plugins_loaded` callback has completed.
  *
- * Deliberately dependency-free: the repo has no composer/PHPUnit setup, and this
- * asserts hook wiring rather than request behaviour, so it needs neither WordPress
- * nor a database. Run it with: php tests/hook-registration-test.php
+ * Deliberately dependency-free: the repo has no composer/PHPUnit setup. Hook wiring
+ * is read from recorded registrations, and request handling is exercised through the
+ * private methods with stand-ins for the few WordPress functions they call, so it
+ * needs neither WordPress nor a database. Run it with: php tests/hook-registration-test.php
  *
  * @package HostingBasicAuthentication
  */
