@@ -28,6 +28,16 @@ if ( 'cli' !== php_sapi_name() ) {
 
 define( 'ABSPATH', __DIR__ );
 
+// Any warning or notice the plugin raises is a failure: one that coerces an
+// unexpected input type can otherwise fail closed by coincidence and pass.
+$GLOBALS['php_errors'] = array();
+set_error_handler(
+	function ( $errno, $errstr, $errfile, $errline ) {
+		$GLOBALS['php_errors'][] = basename( $errfile ) . ":$errline $errstr";
+		return true;
+	}
+);
+
 $GLOBALS['hooks'] = array();
 
 function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
@@ -48,6 +58,10 @@ function get_user_meta( $user_id, $key = '', $single = false ) {
 function delete_user_meta( $user_id, $meta_key, $meta_value = '' ) {
 	$GLOBALS['deleted_user_meta'][] = array( $user_id, $meta_key );
 	return true;
+}
+
+function wp_installing() {
+	return ! empty( $GLOBALS['wp_installing'] );
 }
 
 require __DIR__ . '/../pressable-basic-authentication.php';
@@ -343,7 +357,7 @@ function mpcp_token( $user_id = 7, $suffix = '' ) {
  *
  * @param array $request Overrides for: token (null for absent), user_id (whose meta
  *                       is stored), meta (the stored mpcp_auth_token), user_agent,
- *                       pagenow.
+ *                       pagenow, installing (wp_installing()).
  * @return bool
  */
 function skips_auth_for_onepress( array $request = array() ) {
@@ -359,7 +373,10 @@ function skips_auth_for_onepress( array $request = array() ) {
 		'meta'       => array( 'value' => md5( ONEPRESS_SECRET ), 'exp' => time() + 30 ),
 		'user_agent' => ONEPRESS_UA,
 		'pagenow'    => 'wp-login.php',
+		'installing' => false,
 	);
+
+	$GLOBALS['wp_installing'] = $request['installing'];
 
 	$original_server  = $_SERVER;
 	$original_get     = $_GET;
@@ -380,8 +397,9 @@ function skips_auth_for_onepress( array $request = array() ) {
 	} finally {
 		$_SERVER              = $original_server;
 		$_GET                 = $original_get;
-		$GLOBALS['pagenow']   = $original_pagenow;
-		$GLOBALS['user_meta'] = array();
+		$GLOBALS['pagenow']       = $original_pagenow;
+		$GLOBALS['user_meta']     = array();
+		$GLOBALS['wp_installing'] = false;
 	}
 }
 
@@ -430,9 +448,25 @@ foreach ( array(
 	'a token with extra parts'       => array( 'token' => mpcp_token( 7, '-x' ) ),
 	// (int) '7abc' is 7, so this reaches user 7's real token unless the id is rejected first.
 	'a non-numeric user id'          => array( 'token' => mpcp_token( '7abc' ) ),
+	// Leading zeros keep the id numeric and (int) 7, so only the length cap rejects this.
+	'an overlong token'              => array( 'token' => mpcp_token( str_repeat( '0', 300 ) . '7' ) ),
+	// OnePress hashes the raw header, so a value it cannot hash must not be coerced here.
+	'a non-string user agent'        => array( 'user_agent' => array( ONEPRESS_UA ) ),
+	// OnePress registers no login handler while WordPress is installing.
+	'WordPress installing'           => array( 'installing' => true ),
 ) as $description => $request ) {
 	check( false === skips_auth_for_onepress( $request ), "a one-click request with $description does not waive auth" );
 }
+
+// OnePress rejects only `exp < time()`, so a token in its final second is still live.
+// Run in the first half of a second so time() cannot tick between setup and check.
+while ( fmod( microtime( true ), 1 ) > 0.5 ) {
+	usleep( 10000 );
+}
+check(
+	true === skips_auth_for_onepress( array( 'meta' => array( 'value' => md5( ONEPRESS_SECRET ), 'exp' => time() ) ) ),
+	'a one-click token expiring this second still waives auth, as OnePress accepts it'
+);
 
 // is_ajax_request() is tested directly rather than through skip_request(): this file runs
 // under the CLI SAPI, so is_cli_request() (a sibling arm of skip_request()) is always true
@@ -477,6 +511,11 @@ check( false === is_ajax_for( null ), 'a plain request with no such header is no
 // caller cannot forge. Asserted last, because define() is process-global and irreversible.
 define( 'DOING_AJAX', true );
 check( true === is_ajax_for( null ), 'a genuine DOING_AJAX request is still AJAX (bypasses)' );
+
+check(
+	array() === $GLOBALS['php_errors'],
+	'no check raised a PHP warning or notice' . ( $GLOBALS['php_errors'] ? ': ' . implode( '; ', $GLOBALS['php_errors'] ) : '' )
+);
 
 echo "\n";
 
