@@ -293,8 +293,9 @@ class Pressable_Basic_Auth {
 	 *
 	 * OnePress registers on, and reads, `$_REQUEST`, which at `plugins_loaded` is still
 	 * PHP's own, built from `request_order`. The query-string token must also be the
-	 * one `$_REQUEST` holds, or a `request_order` without G (or a body value overriding
-	 * the query one) would let wp-login.php through with OnePress never handling it.
+	 * one `$_REQUEST` holds. Otherwise a `request_order` without G would let wp-login.php
+	 * through with OnePress never handling it, and a body value overriding the query one
+	 * would have OnePress consume a token the waiver never checked.
 	 *
 	 * OnePress must also be ready to handle the request, or nothing would consume the
 	 * token and the waiver would only expose the password form: loaded, and not stood
