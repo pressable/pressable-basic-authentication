@@ -285,10 +285,16 @@ class Pressable_Basic_Auth {
 	 * never seen and the one-click login can only ever end in a credential prompt.
 	 *
 	 * The waiver repeats OnePress's own checks -- stored token present, unexpired,
-	 * same user agent, matching secret -- so it admits exactly the requests OnePress
-	 * will then log in, and nothing else reaches wp-login.php unchallenged. It is
-	 * read-only: OnePress deletes the stored token as it consumes it, which keeps the
-	 * token single-use, so a replayed URL fails here and is challenged as usual.
+	 * same user agent, matching secret -- and is deliberately narrower than OnePress
+	 * (the token must arrive in the query string, in exactly four parts), so it admits
+	 * only requests OnePress will then log in. It is read-only: OnePress deletes the
+	 * stored token as it consumes it, which keeps the token single-use, so a replayed
+	 * URL fails here and is challenged as usual.
+	 *
+	 * OnePress registers on, and reads, `$_REQUEST`, which at `plugins_loaded` is still
+	 * PHP's own, built from `request_order`. The query-string token must also be the
+	 * one `$_REQUEST` holds, or a `request_order` without G (or a body value overriding
+	 * the query one) would let wp-login.php through with OnePress never handling it.
 	 *
 	 * OnePress must also be ready to handle the request, or nothing would consume the
 	 * token and the waiver would only expose the password form: loaded, and not stood
@@ -298,9 +304,10 @@ class Pressable_Basic_Auth {
 	 * Every active plugin file is included before `plugins_loaded` fires, so the class
 	 * check does not depend on load order.
 	 *
-	 * `$_GET` and `$_SERVER` are read raw on purpose: wp_magic_quotes() only runs after
-	 * `plugins_loaded`, so nothing has been slashed yet and wp_unslash() would corrupt
-	 * a value rather than restore it. That is also how OnePress reads them.
+	 * `$_GET`, `$_REQUEST` and `$_SERVER` are read raw on purpose: wp_magic_quotes()
+	 * only runs after `plugins_loaded`, so nothing has been slashed yet and
+	 * wp_unslash() would corrupt a value rather than restore it. That is also how
+	 * OnePress reads them.
 	 *
 	 * @return bool
 	 */
@@ -325,8 +332,13 @@ class Pressable_Basic_Auth {
 			return false;
 		}
 
-		// MyPressable encodes URL-safe and unpadded; strict mode rejects anything else
-		// instead of silently discarding the characters it does not recognise.
+		if ( ( $_REQUEST['mpcp_token'] ?? null ) !== $encoded ) {
+			return false;
+		}
+
+		// MyPressable encodes URL-safe and unpadded, so map it to the standard alphabet.
+		// Strict mode returns false on any character outside that alphabet instead of
+		// silently discarding it; it still accepts padding and skips whitespace.
 		$decoded = base64_decode( strtr( $encoded, '-_', '+/' ), true );
 
 		if ( false === $decoded ) {

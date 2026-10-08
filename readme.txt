@@ -49,9 +49,10 @@ No manual installation is necessary.​
 * Fixed: the WP Admin button in MyPressable (Pressable OnePress Login) ended in a
   Basic Authentication prompt instead of signing the user in. A one-click login
   request now passes Basic Authentication only when it carries a token the
-  OnePress plugin will accept -- present, unexpired, issued to the same browser,
-  and matching the stored secret -- and only while that plugin is active. Any
-  other request to wp-login.php is still challenged.
+  OnePress plugin will accept -- present, unexpired, presented with the same
+  User-Agent it was issued to, and matching the stored secret -- and only while
+  that plugin is active. Any other request to wp-login.php is still challenged
+  unless an existing exemption applies, such as an existing WordPress session.
 
 = 1.0.5 =
 * Fixed: Basic Authentication could be bypassed entirely on any URL, with no
