@@ -358,7 +358,7 @@ const ONEPRESS_SECRET = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c1
  * @return string
  */
 function mpcp_token( $user_id = 7, $suffix = '' ) {
-	$payload = $user_id . '-' . ONEPRESS_SECRET . '-1755013-' . md5( ONEPRESS_UA ) . $suffix;
+	$payload = $user_id . '-' . ONEPRESS_SECRET . '-1000001-' . md5( ONEPRESS_UA ) . $suffix;
 
 	return rtrim( strtr( base64_encode( $payload ), '+/', '-_' ), '=' );
 }
@@ -463,7 +463,7 @@ foreach ( array(
 	'a non-array stored token'       => array( 'meta' => md5( ONEPRESS_SECRET ) ),
 	'a token for another user'       => array( 'user_id' => 8 ),
 	'a token that is not base64'     => array( 'token' => '!!!not*base64!!!' ),
-	'a token with too few parts'     => array( 'token' => rtrim( strtr( base64_encode( '7-' . ONEPRESS_SECRET . '-1755013' ), '+/', '-_' ), '=' ) ),
+	'a token with too few parts'     => array( 'token' => rtrim( strtr( base64_encode( '7-' . ONEPRESS_SECRET . '-1000001' ), '+/', '-_' ), '=' ) ),
 	'a token with extra parts'       => array( 'token' => mpcp_token( 7, '-x' ) ),
 	// (int) '7abc' is 7, so this reaches user 7's real token unless the id is rejected first.
 	'a non-numeric user id'          => array( 'token' => mpcp_token( '7abc' ) ),
