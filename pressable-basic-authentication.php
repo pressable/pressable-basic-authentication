@@ -8,7 +8,7 @@
 /*
 Plugin Name: Hosting Basic Authentication
 Description: Forces all users to authenticate using Basic Authentication before accessing any page.
-Version: 1.0.5
+Version: 1.0.6
 License: GPL2
 Text Domain: hosting-basic-authentication
 */
@@ -269,8 +269,112 @@ class Pressable_Basic_Auth {
             return true;
         }
 
+        if ($this->is_valid_onepress_login_request()) {
+            return true;
+        }
+
         return false;
     }
+
+	/**
+	 * Whether this is a MyPressable WP Admin one-click login carrying a valid token.
+	 *
+	 * MyPressable sends the user to `wp-login.php?mpcp_token=…`, and the Pressable
+	 * OnePress Login plugin validates that token on `plugins_loaded` priority 10. This
+	 * plugin challenges on priority 1 and exits, so without this waiver the token is
+	 * never seen and the one-click login can only ever end in a credential prompt.
+	 *
+	 * The waiver repeats OnePress's own checks -- stored token present, unexpired,
+	 * same user agent, matching secret -- and is deliberately narrower than OnePress
+	 * (the token must arrive in the query string, in exactly four parts), so it admits
+	 * only requests OnePress will then log in. It is read-only: OnePress deletes the
+	 * stored token as it consumes it, which keeps the token single-use, so a replayed
+	 * URL fails here and is challenged as usual.
+	 *
+	 * OnePress registers on, and reads, `$_REQUEST`, which at `plugins_loaded` is still
+	 * PHP's own, built from `request_order`. The query-string token must also be the
+	 * one `$_REQUEST` holds. Otherwise a `request_order` without G would let wp-login.php
+	 * through with OnePress never handling it, and a body value overriding the query one
+	 * would have OnePress consume a token the waiver never checked.
+	 *
+	 * OnePress must also be ready to handle the request, or nothing would consume the
+	 * token and the waiver would only expose the password form: loaded, and not stood
+	 * down by its own readiness guard, which is repeated here in full. skip_request()
+	 * does not make it redundant: it reads the DOING_AJAX and DOING_CRON constants,
+	 * while OnePress reads wp_doing_ajax() and wp_doing_cron(), which are filterable.
+	 * Every active plugin file is included before `plugins_loaded` fires, so the class
+	 * check does not depend on load order.
+	 *
+	 * `$_GET`, `$_REQUEST` and `$_SERVER` are read raw on purpose: wp_magic_quotes()
+	 * only runs after `plugins_loaded`, so nothing has been slashed yet and
+	 * wp_unslash() would corrupt a value rather than restore it. That is also how
+	 * OnePress reads them.
+	 *
+	 * @return bool
+	 */
+	private function is_valid_onepress_login_request() {
+		if ( ! class_exists( 'Pressable_OnePress_Login_Plugin', false ) ) {
+			return false;
+		}
+
+		if ( wp_installing() || wp_doing_cron() || wp_doing_ajax() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			return false;
+		}
+
+		if ( 'wp-login.php' !== ( $GLOBALS['pagenow'] ?? '' ) ) {
+			return false;
+		}
+
+		$encoded = $_GET['mpcp_token'] ?? null;
+
+		// A genuine token encodes about 120 bytes to about 160 characters. The cap bounds
+		// the decoding and splitting below, which run before any authentication.
+		if ( ! is_string( $encoded ) || '' === $encoded || strlen( $encoded ) > 256 ) {
+			return false;
+		}
+
+		if ( ( $_REQUEST['mpcp_token'] ?? null ) !== $encoded ) {
+			return false;
+		}
+
+		// MyPressable encodes URL-safe and unpadded, so map it to the standard alphabet.
+		// Strict mode returns false on any character outside that alphabet instead of
+		// silently discarding it; it still accepts padding and skips whitespace.
+		$decoded = base64_decode( strtr( $encoded, '-_', '+/' ), true );
+
+		if ( false === $decoded ) {
+			return false;
+		}
+
+		// "<wp_user_id>-<secret>-<site_id>-<md5(user agent)>"; none of the parts can
+		// contain a hyphen, so any other count is not a token MyPressable minted.
+		$parts = explode( '-', $decoded );
+
+		if ( 4 !== count( $parts ) || 1 !== preg_match( '/\A[0-9]+\z/', $parts[0] ) ) {
+			return false;
+		}
+
+		list( $user_id, $secret, , $user_agent_hash ) = $parts;
+
+		$stored = get_user_meta( (int) $user_id, 'mpcp_auth_token', true );
+
+		if ( ! is_array( $stored ) || ! isset( $stored['value'], $stored['exp'] )
+			|| ! is_string( $stored['value'] ) || ! is_numeric( $stored['exp'] ) ) {
+			return false;
+		}
+
+		if ( (int) $stored['exp'] < time() ) {
+			return false;
+		}
+
+		$user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+
+		if ( ! is_string( $user_agent ) || ! hash_equals( md5( $user_agent ), $user_agent_hash ) ) {
+			return false;
+		}
+
+		return hash_equals( $stored['value'], md5( $secret ) );
+	}
 
     /**
      * Whether a path prefix names a script the server would execute.
